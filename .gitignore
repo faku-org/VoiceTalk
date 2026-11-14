@@ -36,3 +36,5 @@ voice/.cache/
 
 # Dev data dir (VT_DATA_DIR default): sqlite db, audit log
 core/.data/
+
+.env

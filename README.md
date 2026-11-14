@@ -25,47 +25,53 @@ Tauri shell (Rust, React webview)
    uv sync --project voice
    ```
 
-2. Set the API keys as user environment variables. Never put them in the repo or in a `.env` inside it. The Tauri shell passes its environment to the sidecars, so open a new terminal after setting them.
+2. Create `.env.local` (gitignored) from the template and fill in the keys. `bun dev` loads it, and the Tauri shell passes it to the sidecars. Empty entries fall back to the defaults below.
 
    ```powershell
-   [Environment]::SetEnvironmentVariable('CARTESIA_API_KEY', '<key>', 'User')
-   # Optional, only for VT_BRAIN=claude:
-   [Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY', '<key>', 'User')
+   Copy-Item .env.example .env.local
    ```
 
-3. Start the local models (two terminals). The STT model downloads on the first run of the voice sidecar.
+   User environment variables work too (`[Environment]::SetEnvironmentVariable('CARTESIA_API_KEY', '<key>', 'User')`, then a new terminal). Never put real keys in a committed file.
+
+3. Run the app:
 
    ```powershell
-   llama-server -m <path>\LFM3-1.7B-Q4_K_M.gguf --port 8080 -ngl 99
-   llama-server -m <path>\embeddinggemma-2.gguf --embedding --port 8891 -ngl 99
+   bun dev --local   # starts llama-server for the LLM (:8080) and the embedder (:8891), then tauri dev
+   bun dev           # tauri dev only, with models you run yourself
    ```
 
-4. Run the app:
+   `--local` finds the GGUF files in the Hugging Face cache (or `VT_LLM_GGUF` / `VT_EMBED_GGUF`), reuses a server that already answers `/health`, and stops the servers it started when the app closes. It prints whether each key is set, never its value. The STT model downloads on the first run of the voice sidecar.
+
+   To run the models by hand instead:
 
    ```powershell
-   bun run tauri:dev
+   llama-server -m <path>\LFM3-1.7B-Q4_K_M.gguf --port 8080 -ngl 99 -c 8192 --jinja
+   llama-server -m <path>\embeddinggemma-2-Q8_0.gguf --embedding --port 8891 -ngl 99
    ```
 
-   Each sidecar also runs alone: `bun core/src/index.ts` and `uv run --project voice voicetalk-voice --port 8765`.
+   Each sidecar also runs alone: `bun core/src/index.ts` and `uv run --project voice voicetalk-voice --port 8765`. `bun run web:dev` runs only the Vite frontend.
 
 ## Environment
 
-Every variable is optional except `CARTESIA_API_KEY`, which speech output needs.
+Every variable is optional except `CARTESIA_API_KEY`, which speech output needs. The full list with comments is in [`.env.example`](.env.example).
 
-| Variable                          | Used by     | Default / meaning                                                             |
-| --------------------------------- | ----------- | ----------------------------------------------------------------------------- |
-| `CARTESIA_API_KEY`                | core        | Cartesia TTS key. Never sent to the webview.                                  |
-| `ANTHROPIC_API_KEY`               | core        | Only with `VT_BRAIN=claude`.                                                  |
-| `VT_BRAIN`                        | core        | `local` (llama-server) or `claude` (Haiku).                                   |
-| `VT_LLM_URL`, `VT_LLM_MODEL`      | core, voice | `http://127.0.0.1:8080`. In voice, unset disables the LLM post-correction.    |
-| `VT_EMBED_URL`, `VT_EMBED_MODEL`  | core        | `http://127.0.0.1:8891/v1/embeddings`, `embeddinggemma-2`.                    |
-| `VT_FOLDERS`                      | core        | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`. |
-| `VT_DATA_DIR`                     | core        | SQLite and index. Default `core/.data` (gitignored).                          |
-| `VT_INGEST`                       | core        | `off` skips the folder watcher.                                               |
-| `VT_NOTES`                        | core        | `off` stops recording calls and the notes decision model.                     |
-| `VT_GLOSSARY`                     | voice       | Glossary TOML, default `voice/glossary.toml`.                                 |
-| `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars    | Set by the Tauri shell. Core default is 4310.                                 |
-| `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell | Overrides for the `bun`/`uv` paths and the repo root.                         |
+| Variable                          | Used by           | Default / meaning                                                             |
+| --------------------------------- | ----------------- | ----------------------------------------------------------------------------- |
+| `CARTESIA_API_KEY`                | core              | Cartesia TTS key. Never sent to the webview.                                  |
+| `ANTHROPIC_API_KEY`               | core              | Only with `VT_BRAIN=claude`.                                                  |
+| `VT_BRAIN`                        | core              | `local` (llama-server) or `claude` (Haiku).                                   |
+| `VT_LLM_URL`, `VT_LLM_MODEL`      | core, voice       | `http://127.0.0.1:8080`. In voice, unset disables the LLM post-correction.    |
+| `VT_EMBED_URL`, `VT_EMBED_MODEL`  | core              | `http://127.0.0.1:8891/v1/embeddings`, `embeddinggemma-2`.                    |
+| `VT_FOLDERS`                      | core              | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`. |
+| `VT_DATA_DIR`                     | core              | SQLite and index. Default `core/.data` (gitignored).                          |
+| `VT_INGEST`                       | core              | `off` skips the folder watcher.                                               |
+| `VT_NOTES`                        | core              | `off` stops recording calls and the notes decision model.                     |
+| `VT_GLOSSARY`                     | voice             | Glossary TOML, default `voice/glossary.toml`.                                 |
+| `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars          | Set by the Tauri shell. Core default is 4310.                                 |
+| `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell       | Overrides for the `bun`/`uv` paths and the repo root.                         |
+| `VT_LLAMA_SERVER`                 | `bun dev --local` | llama-server binary. Default `llama-server` on PATH.                          |
+| `VT_LLM_GGUF`, `VT_EMBED_GGUF`    | `bun dev --local` | Model files. Default: found in the Hugging Face cache.                        |
+| `VT_LLAMA_ARGS`                   | `bun dev --local` | Extra llama-server flags. Default `-ngl 99`.                                  |
 
 ## Checks
 
@@ -88,7 +94,7 @@ The icons in `src-tauri/icons/` are generated from a single source image, and th
    bun run tauri icon assets/icon.png
    ```
 
-3. Check `src-tauri/icons/` in the diff, then run `bun run tauri:dev` to see the window and taskbar icon. The installer uses `icon.ico`.
+3. Check `src-tauri/icons/` in the diff, then run `bun dev` to see the window and taskbar icon. The installer uses `icon.ico`.
 
 `tauri.conf.json` (`bundle.icon`) already lists the generated files, so it needs no change.
 
@@ -137,10 +143,6 @@ The web UI works too: Settings > Secrets and variables > Actions > New repositor
 4. Install the previous version, open Preferencias > Actualizaciones and confirm that it finds the new one, installs it and restarts.
 
 To build locally (signed), set `TAURI_SIGNING_PRIVATE_KEY` (the file content) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in the session, then run `bun run tauri build`. The installer lands in `src-tauri/target/release/bundle/nsis/`.
-
-### Known limitation
-
-The repo is private, so the updater cannot read `latest.json` without authentication. OTA only works once the repo, or a separate releases repo or mirror, is public.
 
 ## Versioning and docs
 
