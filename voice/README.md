@@ -27,7 +27,7 @@ Send binary frames, pcm_s16le mono 16 kHz, any size. Receive JSON:
 - `{"type":"final","text":str,"raw":str,"t_start":sec,"t_end":sec,"stt_ms":int}`
 - `{"type":"error","message":str}`
 
-`text` is after glossary and LLM correction; `raw` is the ASR output. One connection at a time (second gets close 1013). Audio is never written to disk.
+`text` is after glossary and LLM correction; `raw` is the ASR output. Up to 3 connections at once (a voice call uses one; a captured call uses two, remote and mic); the next gets close 1013. Audio is never written to disk.
 
 ## Glossary
 

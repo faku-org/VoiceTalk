@@ -9,12 +9,15 @@ export interface SessionSummaryRow {
   location: string
   status: SessionStatus
   utteranceCount: number
+  /** 'call' for a VoiceTalk call, or the platform key of a captured one. */
+  source: string
 }
 
 export interface SessionDetailData extends SessionSummaryRow {
   utterances: Array<{
     id: string
-    speaker: 'user' | 'agent'
+    speaker: 'user' | 'agent' | 'remote'
+    label: string | null
     text: string
     tStart: number
   }>
@@ -32,7 +35,7 @@ export interface SessionDetailData extends SessionSummaryRow {
   }>
 }
 
-const ROW = 'id title startedAt endedAt location status utteranceCount'
+const ROW = 'id title startedAt endedAt location status utteranceCount source'
 
 export async function fetchSessions(): Promise<SessionSummaryRow[]> {
   const data = await gql<{ sessions: SessionSummaryRow[] }>(
@@ -46,7 +49,7 @@ export async function fetchSession(
 ): Promise<SessionDetailData | null> {
   const data = await gql<{ session: SessionDetailData | null }>(
     `query ($id: String!) { session(id: $id) { ${ROW}
-      utterances { id speaker text tStart }
+      utterances { id speaker label text tStart }
       summary { summary openQuestions raised }
       externalNotes { id body createdAt location speakers } } }`,
     { id },

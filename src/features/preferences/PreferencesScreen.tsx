@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { fadeVariants, transition } from '@/lib/motion'
 import { AppearanceArea } from './areas/AppearanceArea'
 import { AssistantArea } from './areas/AssistantArea'
+import { CaptureArea } from './areas/CaptureArea'
 import { DecisionsArea } from './areas/DecisionsArea'
 import { FoldersArea } from './areas/FoldersArea'
 import { LocationArea } from './areas/LocationArea'
@@ -14,6 +15,7 @@ type Area =
   | 'decisions'
   | 'folders'
   | 'location'
+  | 'capture'
   | 'appearance'
   | 'updates'
   | 'services'
@@ -23,6 +25,7 @@ const AREAS: ReadonlyArray<{ id: Area; label: string }> = [
   { id: 'decisions', label: 'Decisiones' },
   { id: 'folders', label: 'Carpetas' },
   { id: 'location', label: 'Ubicación' },
+  { id: 'capture', label: 'Captura' },
   { id: 'appearance', label: 'Apariencia' },
   { id: 'updates', label: 'Actualizaciones' },
   { id: 'services', label: 'Servicios' },
@@ -38,6 +41,8 @@ function AreaBody({ area }: { area: Area }) {
       return <FoldersArea />
     case 'location':
       return <LocationArea />
+    case 'capture':
+      return <CaptureArea />
     case 'appearance':
       return <AppearanceArea />
     case 'updates':

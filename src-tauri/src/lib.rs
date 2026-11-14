@@ -1,7 +1,11 @@
+pub mod capture;
 mod sidecar;
 
 use std::path::{Path, PathBuf};
 
+use capture::{
+    capture_list_sources, capture_start, capture_status, capture_stop, CaptureManager,
+};
 use sidecar::{Status, Supervisor};
 use tauri::{Manager, RunEvent, State};
 
@@ -32,9 +36,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![sidecar_status, core_url])
+        .invoke_handler(tauri::generate_handler![
+            sidecar_status,
+            core_url,
+            capture_list_sources,
+            capture_start,
+            capture_stop,
+            capture_status
+        ])
         .setup(|app| {
             app.manage(Supervisor::start(repo_root()));
+            app.manage(CaptureManager::default());
             Ok(())
         })
         .build(tauri::generate_context!())

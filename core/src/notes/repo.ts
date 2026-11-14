@@ -12,7 +12,11 @@ import type {
 } from './types.ts'
 
 export interface SessionRepo {
-  create(session: Pick<Session, 'id' | 'startedAt' | 'location'>): void
+  create(
+    session: Pick<Session, 'id' | 'startedAt' | 'location'> & {
+      source?: string
+    },
+  ): void
   get(id: string): Session | null
   list(limit: number, offset: number): Session[]
   end(id: string, endedAt: number, status: SessionStatus): void
@@ -60,6 +64,7 @@ interface SessionDbRow {
   location: string
   title: string | null
   status: SessionStatus
+  source: string
 }
 
 const toSession = (r: SessionDbRow): Session => ({
@@ -69,16 +74,19 @@ const toSession = (r: SessionDbRow): Session => ({
   location: r.location,
   title: r.title,
   status: r.status,
+  source: r.source,
 })
 
 export class SqliteSessionRepo implements SessionRepo {
   constructor(private readonly db: Database) {}
 
-  create(s: Pick<Session, 'id' | 'startedAt' | 'location'>): void {
+  create(
+    s: Pick<Session, 'id' | 'startedAt' | 'location'> & { source?: string },
+  ): void {
     this.db.run(
-      `INSERT INTO sessions (id, started_at, location, status) VALUES (?, ?, ?, 'active')
+      `INSERT INTO sessions (id, started_at, location, status, source) VALUES (?, ?, ?, 'active', ?)
        ON CONFLICT(id) DO NOTHING`,
-      [s.id, s.startedAt, s.location],
+      [s.id, s.startedAt, s.location, s.source ?? 'call'],
     )
   }
 
@@ -126,10 +134,11 @@ interface UtteranceDbRow {
   id: string
   session_id: string
   speaker: SpeakerId
+  label: string | null
   t_start: number
   t_end: number
   text: string
-  source: 'stt' | 'agent'
+  source: 'stt' | 'agent' | 'capture'
 }
 
 export class SqliteUtteranceRepo implements UtteranceRepo {
@@ -137,10 +146,19 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
 
   add(u: UtteranceRow): void {
     this.db.run(
-      `INSERT INTO utterances (id, session_id, speaker, t_start, t_end, text, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO utterances (id, session_id, speaker, label, t_start, t_end, text, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET text = excluded.text, t_end = excluded.t_end`,
-      [u.id, u.sessionId, u.speaker, u.tStart, u.tEnd, u.text, u.source],
+      [
+        u.id,
+        u.sessionId,
+        u.speaker,
+        u.label ?? null,
+        u.tStart,
+        u.tEnd,
+        u.text,
+        u.source,
+      ],
     )
   }
 
@@ -154,6 +172,7 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
         id: r.id,
         sessionId: r.session_id,
         speaker: r.speaker,
+        label: r.label,
         tStart: r.t_start,
         tEnd: r.t_end,
         text: r.text,
@@ -201,7 +220,7 @@ const toNote = (r: NoteDbRow): Note => ({
   createdAt: r.created_at,
   location: r.location,
   speakers: parseJsonList(r.speakers).filter(
-    (s): s is SpeakerId => s === 'user' || s === 'agent',
+    (s): s is SpeakerId => s === 'user' || s === 'agent' || s === 'remote',
   ),
   embedding: r.embedding ? fromBlob(r.embedding) : null,
 })

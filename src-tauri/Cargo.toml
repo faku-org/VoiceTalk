@@ -1,6 +1,6 @@
 [package]
 name = "voicetalk"
-version = "0.6.0"
+version = "0.7.0"
 description = "VoiceTalk desktop shell (Tauri v2): supervises core (Bun) and voice (Python) sidecars"
 authors = ["Faku"]
 edition = "2021"
@@ -20,3 +20,15 @@ serde_json = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
+# Call capture (ADR 0009): sync WebSocket client to core `/capture`, no TLS (loopback only).
+tungstenite = { version = "0.26", default-features = false, features = [
+  "handshake",
+] }
+
+[target.'cfg(windows)'.dependencies]
+# WASAPI process loopback (Windows 10 2004+) and the default microphone.
+wasapi = "0.27"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+] }

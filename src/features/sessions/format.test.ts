@@ -4,6 +4,7 @@ import {
   formatOffset,
   formatStarted,
   sessionLabel,
+  sourceLabel,
   speakerLabel,
   statusLabel,
 } from './format'
@@ -31,6 +32,15 @@ describe('sessions format', () => {
     expect(statusLabel('other')).toBe('other')
     expect(speakerLabel('user')).toBe('Tú')
     expect(speakerLabel('agent')).toBe('Agente')
+  })
+
+  test('captured calls: remote label and platform', () => {
+    expect(speakerLabel('remote', 'Discord')).toBe('Discord')
+    expect(speakerLabel('remote', '  ')).toBe('Interlocutor')
+    expect(speakerLabel('user', null)).toBe('Tú')
+    expect(sourceLabel('call')).toBeNull()
+    expect(sourceLabel('teams')).toBe('Microsoft Teams')
+    expect(sourceLabel('legacy')).toBe('legacy')
   })
 
   test('date and title', () => {

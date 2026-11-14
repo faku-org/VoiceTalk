@@ -7,7 +7,8 @@ WS /stt protocol
   - {"type":"speech_end","t":sec}
   - {"type":"final","text":str,"raw":str,"t_start":sec,"t_end":sec,"stt_ms":int}
   - {"type":"error","message":str}   (ASR failure or model not loaded; connection stays open)
-- one connection at a time; a second one is closed with 1013 (try again later).
+- up to MAX_STT_CONNECTIONS at a time (a voice call uses one; call capture uses two, one per channel);
+  one more is closed with 1013 (try again later). Transcription is still one job at a time.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_GLOSSARY = Path(__file__).resolve().parents[2] / "glossary.toml"
 TRY_AGAIN_LATER = 1013
+MAX_STT_CONNECTIONS = 3
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,8 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
         else None
     )
     asr_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asr")
-    busy = False
+    # Connections currently open. Each one has its own segmenter; the ASR pool serialises the model.
+    open_connections = 0
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -95,8 +98,8 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
 
     @app.websocket("/stt")
     async def stt_socket(ws: WebSocket) -> None:
-        nonlocal busy
-        if busy:
+        nonlocal open_connections
+        if open_connections >= MAX_STT_CONNECTIONS:
             await ws.close(code=TRY_AGAIN_LATER)
             return
         if engine.status != "ready":
@@ -105,7 +108,7 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
             await ws.send_json({"type": "error", "message": f"stt not ready: {engine.status}"})
             await ws.close(code=TRY_AGAIN_LATER)
             return
-        busy = True
+        open_connections += 1
         await ws.accept()
 
         out: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -164,7 +167,7 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
         except WebSocketDisconnect:
             pass
         finally:
-            busy = False
+            open_connections -= 1
             send_task.cancel()
             work_task.cancel()
 

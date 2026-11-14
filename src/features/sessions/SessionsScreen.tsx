@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CircleAlert, History, MapPin, RefreshCw } from 'lucide-react'
+import {
+  CircleAlert,
+  Headphones,
+  History,
+  MapPin,
+  RefreshCw,
+} from 'lucide-react'
 import { Button, SectionTitle } from '@/app/ui'
 import {
   fetchSession,
@@ -12,6 +18,7 @@ import {
   formatOffset,
   formatStarted,
   sessionLabel,
+  sourceLabel,
   speakerLabel,
   statusLabel,
 } from './format'
@@ -65,6 +72,7 @@ function SessionRow({
   onSelect: () => void
 }) {
   const duration = formatDuration(row.startedAt, row.endedAt)
+  const platform = sourceLabel(row.source)
   return (
     <li>
       <button
@@ -81,6 +89,7 @@ function SessionRow({
           {sessionLabel(row.title, row.startedAt)}
         </span>
         <span className="mt-0.5 block text-meta text-muted">
+          {platform ? `${platform} · ` : ''}
           {formatStarted(row.startedAt)}
           {duration ? ` · ${duration}` : ''} · {statusLabel(row.status)}
         </span>
@@ -92,6 +101,7 @@ function SessionRow({
 function SessionDetail({ session }: { session: SessionDetailData }) {
   const duration = formatDuration(session.startedAt, session.endedAt)
   const where = session.location.trim()
+  const platform = sourceLabel(session.source)
   return (
     <article className="space-y-5">
       <header>
@@ -102,6 +112,12 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
           <span>{formatStarted(session.startedAt)}</span>
           {duration && <span>{duration}</span>}
           <span>{statusLabel(session.status)}</span>
+          {platform && (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+              <Headphones className="size-3.5" aria-hidden="true" />
+              Capturada de {platform}
+            </span>
+          )}
           {where && (
             <span className="inline-flex items-center gap-1">
               <MapPin className="size-3.5" aria-hidden="true" />
@@ -147,7 +163,7 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
                 }`}
               >
                 <span className="mb-0.5 flex justify-between gap-4 text-meta text-muted">
-                  <span>{speakerLabel(u.speaker)}</span>
+                  <span>{speakerLabel(u.speaker, u.label)}</span>
                   <span className="tabular-nums">
                     {formatOffset(session.startedAt, u.tStart)}
                   </span>

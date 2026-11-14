@@ -9,8 +9,30 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 export const statusLabel = (status: string): string =>
   STATUS_LABEL[status as SessionStatus] ?? status
 
-export const speakerLabel = (speaker: string): string =>
-  speaker === 'agent' ? 'Agente' : 'Tú'
+/** Who spoke. Captured calls carry a `label` for the remote side (the platform name). */
+export const speakerLabel = (
+  speaker: string,
+  label?: string | null,
+): string => {
+  const l = label?.trim()
+  if (l) return l
+  if (speaker === 'agent') return 'Agente'
+  return speaker === 'remote' ? 'Interlocutor' : 'Tú'
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  discord: 'Discord',
+  teams: 'Microsoft Teams',
+  zoom: 'Zoom',
+  slack: 'Slack',
+  whatsapp: 'WhatsApp',
+  meet: 'Google Meet',
+  other: 'Otra aplicación',
+}
+
+/** Platform of a captured call ("Discord"); null for a plain VoiceTalk call. */
+export const sourceLabel = (source: string): string | null =>
+  source === 'call' ? null : (SOURCE_LABEL[source] ?? source)
 
 /** "14 nov 2026, 18:30" in the user's locale (Spanish). `timeZone` exists for tests. */
 export function formatStarted(ms: number, timeZone?: string): string {

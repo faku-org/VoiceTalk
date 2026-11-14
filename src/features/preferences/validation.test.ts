@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   collect,
+  validateCaptureConsent,
   validateEndOfTurn,
   validateLlmUrl,
   validateLocation,
@@ -44,5 +45,13 @@ describe('validation', () => {
         ['b', 'mal'],
       ]),
     ).toEqual([{ field: 'b', message: 'mal' }])
+  })
+})
+
+describe('capture consent', () => {
+  test('cannot enable without acknowledging the notice', () => {
+    expect(validateCaptureConsent(true, false)).toMatch(/aviso/)
+    expect(validateCaptureConsent(true, true)).toBeNull()
+    expect(validateCaptureConsent(false, false)).toBeNull()
   })
 })

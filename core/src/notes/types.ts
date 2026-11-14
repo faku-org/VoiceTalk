@@ -1,6 +1,6 @@
 export type SessionStatus = 'active' | 'ended' | 'interrupted'
 export type NoteKind = 'internal' | 'external'
-export type SpeakerId = 'user' | 'agent'
+export type SpeakerId = 'user' | 'agent' | 'remote'
 
 export interface Session {
   id: string
@@ -9,16 +9,20 @@ export interface Session {
   location: string
   title: string | null
   status: SessionStatus
+  /** 'call' for a voice call, or the platform key of a captured call (ADR 0009). */
+  source: string
 }
 
 export interface UtteranceRow {
   id: string
   sessionId: string
   speaker: SpeakerId
+  /** Display name of a remote speaker; null for user and agent. */
+  label?: string | null
   tStart: number
   tEnd: number
   text: string
-  source: 'stt' | 'agent'
+  source: 'stt' | 'agent' | 'capture'
 }
 
 export interface Note {

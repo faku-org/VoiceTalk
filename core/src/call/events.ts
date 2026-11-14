@@ -1,6 +1,7 @@
 // Typed emitter that Phase 3 (persistence) subscribes to. Core owns the call; nothing else mutates it.
 
-export type Speaker = 'user' | 'agent'
+// `remote` is the far side of a captured call (ADR 0009): one mixed stream, labelled with the platform name.
+export type Speaker = 'user' | 'agent' | 'remote'
 
 export interface TranscriptEntry {
   id: string
@@ -8,12 +9,17 @@ export interface TranscriptEntry {
   text: string
   // Epoch ms when the utterance started (agent: first token).
   t: number
+  // Epoch ms when it ended; unset means "now" (captured calls know it from the STT timestamps).
+  tEnd?: number
+  // Display name of a remote speaker (the platform); unset for user and agent.
+  label?: string
 }
 
 export type CallEndReason = 'client' | 'error' | 'shutdown'
 
 export interface CallEventMap {
-  callStarted: { callId: string; t: number }
+  // `source` is 'call' (default) or the platform key of a captured call.
+  callStarted: { callId: string; t: number; source?: string }
   // Fired once per utterance, when its text is final (agent: when the turn ends or is cut).
   utteranceAdded: { callId: string; entry: TranscriptEntry }
   callEnded: { callId: string; t: number; reason: CallEndReason }
