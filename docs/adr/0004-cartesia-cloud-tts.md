@@ -41,6 +41,6 @@ key kept on the server side.
 
 ## Open
 
-- Persistent socket with context reuse, to cut the handshake from TTFA.
+- ~~Persistent socket with context reuse~~: done in [ADR 0005](0005-call-loop.md) (`PersistentCartesiaTts`).
 - Timeout on first audio.
 - Voice selection UI. Only Sofía is wired; Daniel and Parker are the alternates in ADR 0003.
