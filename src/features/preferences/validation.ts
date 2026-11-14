@@ -38,6 +38,18 @@ export function validateBrainModel(value: string): string | null {
     : null
 }
 
+/** Hermes profile name. `default` is Faku's personal profile: never usable (mirrors core's schema). */
+export function validateAgentProfile(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return 'Indica el perfil de Hermes.'
+  if (trimmed.length > 64) return 'El nombre del perfil es demasiado largo.'
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(trimmed))
+    return 'Nombre de perfil inválido.'
+  if (trimmed.toLowerCase() === 'default')
+    return 'No se puede usar el perfil default.'
+  return null
+}
+
 export function validateSystemPrompt(
   value: string,
   max: number,

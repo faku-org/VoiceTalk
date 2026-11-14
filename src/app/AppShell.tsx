@@ -24,6 +24,7 @@ import { SessionsScreen } from '@/features/sessions/SessionsScreen'
 import { fadeVariants, transition } from '@/lib/motion'
 import { CallSlot } from './callSlot'
 import { usePrefs } from './prefsContext'
+import { useHermesGateway } from './useHermesGateway'
 
 type View = 'call' | 'capture' | 'discord' | 'sessions' | 'preferences'
 
@@ -94,7 +95,8 @@ export function AppShell() {
   const [view, setView] = useState<View>('call')
   const capture = useCapture()
   const detect = useCallDetection(capture)
-  const { keyStatus } = usePrefs()
+  const { keyStatus, prefs } = usePrefs()
+  useHermesGateway(prefs?.agent)
   // Without a bot token the feature is hidden entirely.
   const discordOn = keyStatus?.discord === true
   const discord = useDiscordStatus(discordOn)

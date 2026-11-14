@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   collect,
+  validateAgentProfile,
   validateBrainEndpoint,
   validateBrainModel,
   validateCaptureConsent,
@@ -13,6 +14,15 @@ import {
 } from './validation'
 
 describe('validation', () => {
+  test('agent profile: never default, safe characters only', () => {
+    expect(validateAgentProfile('voicetalk')).toBeNull()
+    expect(validateAgentProfile('voice_talk-2')).toBeNull()
+    expect(validateAgentProfile('')).not.toBeNull()
+    expect(validateAgentProfile('default')).toContain('default')
+    expect(validateAgentProfile('DEFAULT')).toContain('default')
+    expect(validateAgentProfile('../x')).not.toBeNull()
+    expect(validateAgentProfile('a'.repeat(65))).not.toBeNull()
+  })
   test('brain endpoint: empty only when optional', () => {
     expect(validateBrainEndpoint('', false)).toBeNull()
     expect(validateBrainEndpoint('  ', true)).not.toBeNull()

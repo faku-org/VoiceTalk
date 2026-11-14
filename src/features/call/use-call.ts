@@ -6,6 +6,9 @@ import { inTauri } from '@/app/coreClient'
 import {
   parseServerEvent,
   upsertEntry,
+  upsertStep,
+  type AgentState,
+  type AgentStep,
   type CallState,
   type TranscriptEntry,
   type TurnLatency,
@@ -22,6 +25,10 @@ export interface CallLevels {
 export interface CallView {
   phase: CallPhase
   agentState: CallState
+  /** The local agent (Hermes): working, waiting for a permission, or unreachable. */
+  agent: AgentState
+  /** Agent timeline of this call: tasks and the permissions they asked for. */
+  steps: AgentStep[]
   transcript: TranscriptEntry[]
   latency: { turn: number; latency: TurnLatency } | null
   error: string | null
@@ -30,6 +37,8 @@ export interface CallView {
 const INITIAL: CallView = {
   phase: 'idle',
   agentState: 'idle',
+  agent: 'idle',
+  steps: [],
   transcript: [],
   latency: null,
   error: null,
@@ -79,6 +88,7 @@ export function useCall(corePort: number | null, nativeMic = false) {
     }
     setView((v) => ({
       ...INITIAL,
+      steps: keepTranscript ? v.steps : [],
       transcript: keepTranscript ? v.transcript : [],
       latency: keepTranscript ? v.latency : null,
       error: error ?? (keepTranscript ? v.error : null),
@@ -174,6 +184,14 @@ export function useCall(corePort: number | null, nativeMic = false) {
       const event = parseServerEvent(ev.data)
       if (!event) return
       switch (event.type) {
+        case 'agent':
+          setView((v) =>
+            v.agent === event.state ? v : { ...v, agent: event.state },
+          )
+          break
+        case 'agent_step':
+          setView((v) => ({ ...v, steps: upsertStep(v.steps, event.step) }))
+          break
         case 'stop_playback':
           player.flush()
           // Barge-in: the orb leaves `speaking` now, not when the next state event arrives.
@@ -223,6 +241,19 @@ export function useCall(corePort: number | null, nativeMic = false) {
     teardown(true, null)
   }
 
+  const send = (frame: Record<string, unknown>) => {
+    const current = live.current
+    if (current && current.ws.readyState === WebSocket.OPEN)
+      current.ws.send(JSON.stringify(frame))
+  }
+
+  /** Answers the permission the agent asked for. The server settles the step; the UI waits for its event. */
+  const answerApproval = (id: string, choice: 'once' | 'deny') =>
+    send({ type: 'approval', id, choice })
+
+  /** Stops the running task without ending the call. */
+  const stopAgent = () => send({ type: 'agent_stop' })
+
   // Leaving the screen ends the call.
   useEffect(
     () => () => {
@@ -240,5 +271,5 @@ export function useCall(corePort: number | null, nativeMic = false) {
     [],
   )
 
-  return { view, levels, start, stop }
+  return { view, levels, start, stop, answerApproval, stopAgent }
 }

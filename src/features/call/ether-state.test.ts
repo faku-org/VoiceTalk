@@ -12,6 +12,7 @@ import {
 const base: CallSnapshot = {
   phase: 'active',
   agentState: 'idle',
+  agent: 'idle',
   error: false,
   offline: false,
   longIdle: false,
@@ -38,6 +39,34 @@ describe('etherStateFor', () => {
     expect(
       etherStateFor({ ...base, agentState: 'speaking', error: true }),
     ).toBe('speaking')
+  })
+
+  test('a pending permission shows attention over any voice state', () => {
+    for (const s of ['idle', 'listening', 'thinking', 'speaking'] as const)
+      expect(
+        etherStateFor({ ...base, agentState: s, agent: 'attention' }),
+      ).toBe('attention')
+  })
+
+  test('the agent working shows only while the voice is idle', () => {
+    expect(etherStateFor({ ...base, agent: 'working' })).toBe('working')
+    for (const s of ['listening', 'thinking', 'speaking'] as const)
+      expect(etherStateFor({ ...base, agentState: s, agent: 'working' })).toBe(
+        s,
+      )
+  })
+
+  test('an unreachable agent does not change Ether during a call', () => {
+    expect(etherStateFor({ ...base, agent: 'offline' })).toBe('idle')
+    expect(
+      etherStateFor({ ...base, agentState: 'speaking', agent: 'offline' }),
+    ).toBe('speaking')
+  })
+
+  test('the agent never shows outside a call', () => {
+    expect(etherStateFor({ ...base, phase: 'idle', agent: 'attention' })).toBe(
+      'idle',
+    )
   })
 
   test('resting only after long idle outside a call', () => {

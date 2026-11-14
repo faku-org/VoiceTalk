@@ -35,11 +35,13 @@ import { useAreaSave } from '../useAreaSave'
 import {
   collect,
   validateBrainEndpoint,
+  validateAgentProfile,
   validateBrainModel,
   validateLlmUrl,
   validateSystemPrompt,
   validateVoiceId,
 } from '../validation'
+import { AgentField, type AgentDraft } from './AgentField'
 import { VoiceField } from './VoiceField'
 
 const PROVIDER_ICONS: Record<BrainProvider, LucideIcon> = {
@@ -118,6 +120,7 @@ export function AssistantArea() {
     prefs.tts.provider,
   )
   const [voices, setVoices] = useState<TtsVoices>(prefs.tts.voices)
+  const [agent, setAgent] = useState<AgentDraft>(prefs.agent)
 
   const info = providerInfo(provider)
   const issues = collect([
@@ -131,6 +134,9 @@ export function AssistantArea() {
     ['model', validateBrainModel(model)],
     ['systemPrompt', validateSystemPrompt(systemPrompt, SYSTEM_PROMPT_MAX)],
     ['voiceId', validateVoiceId(voices[ttsProvider])],
+    ['agentUrl', validateLlmUrl(agent.url)],
+    ['agentProfile', validateAgentProfile(agent.profile)],
+    ['agentModel', validateBrainModel(agent.model)],
   ])
   const { save, state, shownIssues, dirty } = useAreaSave(issues, () => ({
     brain: {
@@ -141,6 +147,12 @@ export function AssistantArea() {
       effort,
       style,
       systemPrompt,
+    },
+    agent: {
+      enabled: agent.enabled,
+      url: agent.url.trim(),
+      profile: agent.profile.trim(),
+      model: agent.model.trim(),
     },
     stt,
     llmUrl: llmUrl.trim(),
@@ -173,7 +185,7 @@ export function AssistantArea() {
     >
       <SectionTitle
         title="Asistente"
-        description="Cerebro que responde, reconocimiento de lo que dices y voz con la que habla."
+        description="Cerebro que responde, reconocimiento de lo que dices, voz con la que habla y agente que actúa en tu PC."
       />
 
       <fieldset className="space-y-2">
@@ -474,6 +486,20 @@ export function AssistantArea() {
         }}
         onVoice={(id, voiceId) => {
           setVoices((prev) => ({ ...prev, [id]: voiceId }))
+          dirty()
+        }}
+      />
+
+      <AgentField
+        draft={agent}
+        savedKey={prefs.agent}
+        errors={{
+          url: errorOf('agentUrl'),
+          profile: errorOf('agentProfile'),
+          model: errorOf('agentModel'),
+        }}
+        onChange={(next) => {
+          setAgent((prev) => ({ ...prev, ...next }))
           dirty()
         }}
       />

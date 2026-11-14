@@ -40,8 +40,28 @@ export interface DetectPreference {
   rules: DetectRuleEntry[]
 }
 
+/** Local Hermes Agent: Ether's hands (ADR 0017). Its model is separate from the voice brain. */
+export interface AgentPreference {
+  enabled: boolean
+  /** Hermes API server of the profile (loopback). */
+  url: string
+  /** Hermes profile; never `default`. */
+  profile: string
+  /** Empty = the profile's own model. */
+  model: string
+}
+
+/** Reachability only: the API key never leaves core. */
+export interface AgentStatus {
+  enabled: boolean
+  hasKey: boolean
+  online: boolean
+  reason: string | null
+}
+
 export interface Preferences {
   brain: Brain
+  agent: AgentPreference
   /** Speech recognition model; the voice service swaps it in the background. */
   stt: SttModel
   llmUrl: string
@@ -65,6 +85,7 @@ export interface Preferences {
 /** Same shape, every field optional (nested objects too). */
 export interface PreferencesPatch {
   brain?: Partial<Brain>
+  agent?: Partial<AgentPreference>
   stt?: SttModel
   llmUrl?: string
   tts?: { provider?: TtsProvider; voices?: Partial<TtsVoices> }
@@ -113,6 +134,7 @@ export interface ModelStatus {
 
 export const PREFS_FIELDS = `
   brain { provider model baseUrl effort style systemPrompt }
+  agent { enabled url profile model }
   stt llmUrl folders theme
   tts { provider voices { cartesia xai } }
   thresholds { respondConfidence vadSensitivity endOfTurnMs }

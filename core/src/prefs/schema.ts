@@ -13,6 +13,7 @@ import {
   STYLES,
   SYSTEM_PROMPT_MAX,
 } from '../llm/presets.ts'
+import { DEFAULT_AGENT_URL, PROFILE_NAME } from '../agent/profile.ts'
 
 const PLATFORM_KEYS = Object.keys(PLATFORMS) as [PlatformKey, ...PlatformKey[]]
 
@@ -107,8 +108,30 @@ const brainShape = z.object({
   systemPrompt: z.string().max(SYSTEM_PROMPT_MAX),
 })
 
+/** Local Hermes Agent: Ether's hands (ADR 0017). Its model is separate from the voice brain. */
+const agentShape = z.object({
+  /** Opt-in: hand action requests to Hermes. Off by default. */
+  enabled: z.boolean(),
+  /** Hermes API server of the profile (loopback). */
+  url: httpUrl,
+  /** Hermes profile the shell starts. Never `default`: that one is the user's personal profile. */
+  profile: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9][a-z0-9_-]*$/i, 'Nombre de perfil inválido.')
+    .refine(
+      (v) => v.toLowerCase() !== 'default',
+      'No se puede usar el perfil default.',
+    ),
+  /** Model for the agent (a vision-capable one for computer use). Empty = the profile's own model. */
+  model: z.string().trim().max(120),
+})
+
 const shape = z.object({
   brain: brainShape,
+  agent: agentShape,
   llmUrl: httpUrl,
   tts: ttsShape,
   stt: z.enum(STT_MODELS),
@@ -129,6 +152,7 @@ export type Preferences = z.infer<typeof shape>
 export const patchSchema = shape
   .extend({
     brain: brainShape.partial(),
+    agent: agentShape.partial(),
     thresholds: thresholdsShape.partial(),
     location: locationShape.partial(),
     capture: captureShape.extend({ detect: detectShape.partial() }).partial(),
@@ -139,6 +163,12 @@ export type PreferencesPatch = z.infer<typeof patchSchema>
 
 export const DEFAULT_PREFERENCES: Preferences = {
   brain: DEFAULT_BRAIN,
+  agent: {
+    enabled: false,
+    url: DEFAULT_AGENT_URL,
+    profile: PROFILE_NAME,
+    model: '',
+  },
   llmUrl: DEFAULT_LLM_URL,
   tts: { provider: DEFAULT_TTS_PROVIDER, voices: defaultTtsVoices() },
   stt: DEFAULT_STT,
@@ -164,13 +194,14 @@ export function mergePreferences(
     Object.fromEntries(
       Object.entries(value).filter(([, v]) => v !== undefined),
     ) as Partial<T>
-  const { brain, thresholds, location, capture, tts, ...rest } = patch
+  const { brain, agent, thresholds, location, capture, tts, ...rest } = patch
   const { detect, ...captureRest } = capture ?? {}
   const { voices, ...ttsRest } = tts ?? {}
   return {
     ...base,
     ...defined(rest),
     brain: { ...base.brain, ...defined(brain ?? {}) },
+    agent: { ...base.agent, ...defined(agent ?? {}) },
     thresholds: { ...base.thresholds, ...defined(thresholds ?? {}) },
     location: { ...base.location, ...defined(location ?? {}) },
     capture: {

@@ -1,9 +1,11 @@
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun'
+import { getAgentService, type AgentPort } from '../agent/service.ts'
 import type { ChatProvider } from '../llm/index.ts'
 import type { CoreConfig } from '../config.ts'
 import type { Preferences } from '../prefs/schema.ts'
 import type { TtsProvider } from '../tts/provider.ts'
 import { createLiveProviders, type LiveProvidersOptions } from './live.ts'
+import { parseClientControl } from './protocol.ts'
 import { CallSession } from './session.ts'
 import { callStore, type CallStore } from './store.ts'
 import { createVoiceConnector, type SttConnector } from './stt-client.ts'
@@ -23,6 +25,8 @@ export interface CallRuntime {
   readonly ttsKeyEnv: string
   stt: SttConnector
   store: CallStore
+  // Ether's hands (ADR 0017). Absent in tests that do not need it.
+  agent?: AgentPort
   log: (line: string) => void
 }
 
@@ -74,6 +78,7 @@ export function createCallRuntime(
     },
     stt: createVoiceConnector(voicePort),
     store: callStore,
+    agent: getAgentService(),
     log,
   }
 }
@@ -150,6 +155,7 @@ export function createCallSocket(rt: CallRuntime): {
           llm: rt.llm,
           tts: rt.tts,
           store: rt.store,
+          agent: rt.agent,
           out: {
             json: (e) => send(JSON.stringify(e)),
             audio: (pcm) => send(pcm),
@@ -167,12 +173,12 @@ export function createCallSocket(rt: CallRuntime): {
         // A feeder carries audio only; a stray control frame on it must not end the call.
         if (ws.data.feeder && typeof message === 'string') return
         if (typeof message === 'string') {
-          try {
-            if ((JSON.parse(message) as { type?: unknown }).type === 'stop')
-              session.stop('client')
-          } catch {
-            // ignore malformed control frames
-          }
+          // Malformed or unknown control frames are ignored.
+          const control = parseClientControl(message)
+          if (control?.type === 'stop') session.stop('client')
+          else if (control?.type === 'approval')
+            session.answerApproval(control.id, control.choice)
+          else if (control?.type === 'agent_stop') session.stopAgent()
           return
         }
         session.pushAudio(
