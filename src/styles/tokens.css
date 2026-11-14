@@ -1,0 +1,175 @@
+/*
+ * VoiceTalk design tokens (DESIGN.md). Extends the Azul theme from
+ * @wefaber/tokens: the roles Azul already defines (bg, surface*, border, text*,
+ * accent, on-accent, danger, warning, success, review, orb*, elev-float, r-*,
+ * font-ui, font-code) come from the package and match the design system
+ * values. Only what VoiceTalk adds lives here: on-danger, recording,
+ * highlight, island-*, spacing/row sizes, dur-view, display and chat fonts.
+ * Names never change between themes; values do.
+ */
+
+/* Light is the default; dark is set by theme-init.js / theme.ts (.dark and data-theme). */
+:root,
+[data-theme='light'] {
+  --on-danger: #ffffff; /* 5.6:1 on danger (#c62828) */
+  --recording: var(--danger);
+  --highlight: rgb(
+    154 91 0 / 0.18
+  ); /* tint under a highlighted passage; the text stays --text */
+
+  /* Island: always dark, in both themes. Text on it uses island-* only. */
+  --island: #05080f;
+  --island-edge: rgb(
+    238 243 248 / 0.16
+  ); /* keeps the capsule visible on dark windows */
+  --island-text: #eef3f8;
+  --island-muted: #aeb9c7;
+  --island-accent: #4c9ffe;
+  --island-alert: #ff8a80;
+
+  /* Spacing, rows, shape and motion not in the kit contract. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --row-compact: 32px;
+  --row: 40px;
+  --row-touch: 44px;
+  --island-closed: 44px;
+  --island-row: 52px;
+  --island-max: 560px;
+  --island-top: 8px;
+  --dock: 400px;
+  --r-full: 9999px;
+  --dur-view: 200ms; /* view fade: stays on under reduced motion (opacity only); the kit zeroes the other durations */
+
+  /* Display = view titles and headers. Chat = what was said. UI = everything else (kit --font-ui). */
+  --font-heading:
+    'Bricolage Grotesque Variable', 'Bricolage Grotesque', 'Segoe UI',
+    system-ui, sans-serif;
+}
+
+:root.dark,
+:root[data-theme='dark'] {
+  --on-danger: #0a1220; /* 7.5:1 on danger (#ff8a80) */
+  --highlight: rgb(255 204 128 / 0.26);
+}
+
+/* Chat font: a plain theme variable (font-chat utility and var(--font-chat)). */
+@theme {
+  --font-chat: 'Averia Serif Libre', Georgia, serif;
+}
+
+/* Roles as Tailwind utilities (bg-on-danger, text-island-text, h-row, font-chat...). */
+@theme inline {
+  --color-on-danger: var(--on-danger);
+  --color-recording: var(--recording);
+  --color-highlight: var(--highlight);
+  --color-island: var(--island);
+  --color-island-edge: var(--island-edge);
+  --color-island-text: var(--island-text);
+  --color-island-muted: var(--island-muted);
+  --color-island-accent: var(--island-accent);
+  --color-island-alert: var(--island-alert);
+  --color-orb: var(--orb);
+  --color-orb-ring: var(--orb-ring);
+  --color-orb-flow: var(--orb-flow);
+  --color-orb-alert: var(--orb-alert);
+  --color-orb-error: var(--orb-error);
+  --color-orb-off: var(--orb-off);
+
+  --spacing-row-compact: var(--row-compact);
+  --spacing-row: var(--row);
+  --spacing-row-touch: var(--row-touch);
+  --spacing-dock: var(--dock);
+  --spacing-island-closed: var(--island-closed);
+  --spacing-island-row: var(--island-row);
+  --spacing-island-max: var(--island-max);
+  --spacing-island-top: var(--island-top);
+
+  --radius-full: var(--r-full);
+}
+
+/*
+ * Type scale as classes (same as the design system). The sizes also exist as
+ * Tailwind utilities (text-h1, text-body...) from @wefaber/tokens; these
+ * classes add the family and weight that go with each step.
+ */
+@layer components {
+  .hero {
+    font-family: var(--font-heading);
+    font-size: 56px;
+    line-height: 60px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .display {
+    font-family: var(--font-heading);
+    font-size: 32px;
+    line-height: 38px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .h1 {
+    font-family: var(--font-heading);
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+  }
+  .h2 {
+    font-family: var(--font-heading);
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+  }
+  .h3 {
+    font-family: var(--font-heading);
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+  }
+  .chat {
+    font-family: var(--font-chat);
+    font-size: 15px;
+    line-height: 22px;
+    font-weight: 400;
+  }
+  .body-lg {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 400;
+  }
+  .body {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 400;
+  }
+  .meta {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 400;
+  }
+  .caption {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  .mono {
+    font-family: var(--font-code);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 400;
+  }
+}
+
+/* Recording surface: full 1px recording border, 8 % recording tint over the surface. Never a single side, never animated. */
+@utility surface-recording {
+  border: 1px solid var(--recording);
+  background-color: color-mix(in srgb, var(--recording) 8%, var(--surface));
+}
