@@ -7,9 +7,11 @@ import {
   type Codemode,
 } from './codemode/index.ts'
 import { loadStorageConfig, openDb, type StorageConfig } from './db/index.ts'
+import { createChatService, type ChatService } from './chat/index.ts'
 import { Ingester } from './ingest/index.ts'
 import { liveChat } from './call/live.ts'
 import {
+  createChatProvider,
   loadLlmConfig,
   normalizeBaseUrl,
   OpenAiCompatChat,
@@ -37,6 +39,7 @@ export interface Services {
   ingester: Ingester
   codemode: Codemode
   notes: NotesService
+  chat: ChatService
   close(): void
 }
 
@@ -47,6 +50,8 @@ export function createServices(
     db?: Database
     /** Decision/summary model. Defaults to the local llama-server; never the cloud brain. */
     llm?: ChatProvider | null
+    /** Brain of the chat tab. Defaults to the one the call uses (`loadLlmConfig` + `createChatProvider`). */
+    chatLlm?: ChatProvider | null
   } = {},
 ): Services {
   const db = overrides.db ?? openDb(config.dataDir)
@@ -92,6 +97,14 @@ export function createServices(
       }
     },
   })
+  const chat = createChatService({
+    db,
+    notes,
+    llm:
+      overrides.chatLlm === undefined
+        ? createChatProvider(llmConfig)
+        : overrides.chatLlm,
+  })
   const codemode = createCodemode({
     ctx: { allowlist, retriever, notes: notes.search },
     auditPath: join(config.dataDir, AUDIT_FILE),
@@ -105,6 +118,7 @@ export function createServices(
     ingester,
     codemode,
     notes,
+    chat,
     close() {
       ingester.stop()
       db.close()

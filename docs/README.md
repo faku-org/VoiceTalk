@@ -6,8 +6,8 @@ Voice companion desktop app (Tauri): voice chat with a cloud TTS and local STT, 
 
 - `src-tauri/`: Tauri v2 shell. Spawns and health-checks the two sidecars, kills them on exit. Updater, dialog and process plugins. Icons in `src-tauri/icons/`.
 - `.github/workflows/`: `checks.yml` and `format.yml` on PRs, `release.yml` on `v*` tags.
-- `src/`: React webview: app shell, onboarding, preferences (`src/app`, `src/features/*`), call screen in `src/features/call`, mic and playback in `src/audio`.
-- `core/`: Bun sidecar (Elysia + GraphQL Yoga/Pothos). Call loop over `WS /call`, LLM brain, Cartesia TTS, SQLite storage, folder ingest/RAG, read-only Code Mode, preferences, optional Discord bot (`core/src/discord`).
+- `src/`: React webview: app shell, onboarding, preferences (`src/app`, `src/features/*`), call screen in `src/features/call`, the shared voice and text timeline (`TranscriptTurn`, composer, selection toolbar) in `src/features/chat`, mic and playback in `src/audio`.
+- `core/`: Bun sidecar (Elysia + GraphQL Yoga/Pothos). Call loop over `WS /call`, LLM brain, Cartesia TTS, SQLite storage, folder ingest/RAG, read-only Code Mode, preferences, optional Discord bot (`core/src/discord`), text chat and model ops (`core/src/chat`).
 - `voice/`: Python sidecar (uv, FastAPI). Silero VAD + selectable STT (Phonon-2.5 default, Canary, Fluid Speech Pro) over `WS /stt` (several links: the mic call plus one per Discord speaker), glossary post-correction.
 
 Dev: `bun run tauri:dev`. Each sidecar also runs alone: `bun core/src/index.ts`, `uv run --project voice voicetalk-voice --port <N>`.
@@ -17,6 +17,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 ## Design
 
 - [DESIGN.md](../DESIGN.md): design system (tokens, type, layout, Ether, privacy, component catalog, design decisions). Tokens in `src/index.css` + `src/styles/tokens.css`; fonts bundled via `@fontsource`.
+- [Design brief](design/brief.md): what the app is, screens, Ether, tokens, open questions. Input for the design system.
 
 ## ADRs
 
@@ -34,10 +35,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0012: Brain presets](adr/0012-brain-presets.md): providers, thinking effort per provider, styles, custom system prompt, `brain` migration.
 - [0013: TTS providers](adr/0013-tts-providers.md): Cartesia and xAI adapters, voice picker with preview, `tts` prefs and migration, local TTS verdict.
 - [0014: Native microphone with echo cancellation](adr/0014-mic-aec.md): WASAPI mic + loopback reference, AEC3, RNNoise, `WS /call/mic`, opt-in.
-
-## Design
-
-- [Design brief](design/brief.md): what the app is, screens, Ether, tokens, open questions. Input for the design system.
+- [0015: One timeline for voice and text turns](adr/0015-one-timeline.md): text chat on the call brain inside the call view and each session (no tab), session threads, reply and follow-up from a selection, model ops as text directives, correction overlay, forks, SSE.
 
 ## Fixes batches
 

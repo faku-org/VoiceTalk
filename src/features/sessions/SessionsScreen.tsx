@@ -7,6 +7,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { Button, SectionTitle } from '@/app/ui'
+import { Conversation } from '@/features/chat'
 import {
   fetchSession,
   fetchSessions,
@@ -15,11 +16,9 @@ import {
 } from './api'
 import {
   formatDuration,
-  formatOffset,
   formatStarted,
   sessionLabel,
   sourceLabel,
-  speakerLabel,
   statusLabel,
 } from './format'
 
@@ -147,33 +146,12 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
         </Empty>
       )}
 
-      <section aria-label="Transcripción" className="space-y-2">
+      <section className="space-y-2">
         <h4 className="text-body font-medium">Transcripción</h4>
-        {session.utterances.length === 0 ? (
-          <Empty>No hay intervenciones guardadas.</Empty>
-        ) : (
-          <ul className="space-y-2">
-            {session.utterances.map((u) => (
-              <li
-                key={u.id}
-                className={`chat max-w-[85%] rounded-card border border-border px-3.5 py-2 ${
-                  // Discord bot sessions name every speaker; only the own mic sits on the right.
-                  u.speaker === 'user' && !u.speakerName
-                    ? 'ml-auto bg-surface'
-                    : 'mr-auto bg-surface-2'
-                }`}
-              >
-                <span className="mb-0.5 flex justify-between gap-4 font-sans text-meta text-muted">
-                  <span>{speakerLabel(u.speaker, u.speakerName, u.label)}</span>
-                  <span className="tabular-nums">
-                    {formatOffset(session.startedAt, u.tStart)}
-                  </span>
-                </span>
-                {u.text}
-              </li>
-            ))}
-          </ul>
-        )}
+        <Conversation
+          source={{ kind: 'session', id: session.id }}
+          emptyText="No hay intervenciones guardadas. Escribile a Ether para hablar de esta conversación."
+        />
       </section>
     </article>
   )

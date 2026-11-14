@@ -1,7 +1,7 @@
 import { CircleAlert, Mic, PhoneOff } from 'lucide-react'
 import { usePrefs } from '@/app/prefsContext'
 import { formatClock } from '@/features/capture/protocol'
-import { CallTranscript } from './CallTranscript'
+import { CallConversation } from '@/features/chat'
 import { useAfter, useElapsedSeconds, useMediaQuery } from './call-hooks'
 import { EtherOrb } from './EtherOrb'
 import {
@@ -137,7 +137,7 @@ export function CallScreen({
 
         {hasConversation && (
           <div className="w-full min-w-0 flex-1">
-            <CallTranscript entries={view.transcript} inCall={inCall} />
+            <CallConversation inCall={inCall} live={view.transcript} />
             {view.latency && (
               <p className="mt-4 font-mono text-xs text-text-muted tabular-nums">
                 Último turno: {Math.round(view.latency.latency.totalMs)} ms
