@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from 'bun'
 import { createCore } from './app.ts'
 import {
+  CALL_MIC_PATH,
   CALL_PATH,
   createCallRuntime,
   createCallSocket,
@@ -50,6 +51,8 @@ const server = Bun.serve<SocketData>({
   fetch: (req, srv) => {
     const { pathname } = new URL(req.url)
     if (pathname === CAPTURE_PATH) return capture.upgrade(req, srv as never)
+    // Native mic (ADR 0014): feeds the active call, so it does not count as a second call.
+    if (pathname === CALL_MIC_PATH) return call.upgradeMic(req, srv as never)
     if (pathname === CALL_PATH)
       // The microphone is shared: no voice call while a capture is running.
       return capture.active

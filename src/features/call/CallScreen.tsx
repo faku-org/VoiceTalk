@@ -1,5 +1,6 @@
 import { CircleAlert, LoaderCircle, Mic, PhoneOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { usePrefs } from '@/app/prefsContext'
 import { useCall } from './use-call'
 import type { CallState } from './protocol'
 
@@ -23,7 +24,11 @@ function levelPercent(rms: number): number {
 }
 
 export function CallScreen({ corePort }: { corePort: number | null }) {
-  const { view, start, stop } = useCall(corePort)
+  const { prefs } = usePrefs()
+  const { view, start, stop } = useCall(
+    corePort,
+    prefs?.capture.nativeMic ?? false,
+  )
   const inCall = view.phase !== 'idle'
   const StateIcon = STATE_ICON[view.agentState]
   const pct = levelPercent(view.level)

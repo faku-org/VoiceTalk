@@ -15,8 +15,8 @@ export interface Preferences {
   thresholds: Thresholds
   folders: string[]
   location: { manual: string; ipGeolocation: boolean }
-  /** Call capture (ADR 0009): off by default; `consentAck` = the notice was confirmed. */
-  capture: { enabled: boolean; consentAck: boolean }
+  /** Call capture (ADR 0009): off by default; `consentAck` = the notice was confirmed. `nativeMic` (ADR 0014): call mic captured in Rust with echo cancellation. */
+  capture: { enabled: boolean; consentAck: boolean; nativeMic: boolean }
   theme: ThemePreference
   onboarding: { version: number; completedAt: string } | null
 }
@@ -53,6 +53,6 @@ export const PREFS_FIELDS = `
   brain llmUrl voiceId folders theme
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }
-  capture { enabled consentAck }
+  capture { enabled consentAck nativeMic }
   onboarding { version completedAt }
 `

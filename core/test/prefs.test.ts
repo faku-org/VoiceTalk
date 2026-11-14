@@ -103,6 +103,30 @@ describe('prefs store', () => {
     expect(prefs.voiceId).toBe(DEFAULT_PREFERENCES.voiceId)
   })
 
+  test('nativeMic (ADR 0014) is off by default, patches alone and survives a file without it', () => {
+    expect(DEFAULT_PREFERENCES.capture.nativeMic).toBe(false)
+    writeFileSync(
+      join(dir, 'preferences.json'),
+      JSON.stringify({ capture: { enabled: true, consentAck: true } }),
+    )
+    const store = createPrefsStore(dir)
+    expect(store.get().capture).toEqual({
+      enabled: true,
+      consentAck: true,
+      nativeMic: false,
+    })
+    const next = store.update({ capture: { nativeMic: true } })
+    expect(next.capture).toEqual({
+      enabled: true,
+      consentAck: true,
+      nativeMic: true,
+    })
+    expect(createPrefsStore(dir).get().capture.nativeMic).toBe(true)
+    expect(() => store.update({ capture: { nativeMic: 'yes' } })).toThrow(
+      PreferencesError,
+    )
+  })
+
   test('has no secret fields', () => {
     expect(Object.keys(DEFAULT_PREFERENCES).join(',')).not.toMatch(
       /key|token|secret/i,
@@ -163,6 +187,21 @@ describe('GraphQL preferences', () => {
     expect(
       JSON.parse(readFileSync(join(dir, 'preferences.json'), 'utf8')).brain,
     ).toBe('claude')
+  })
+
+  test('capture.nativeMic round-trips through GraphQL', async () => {
+    setPrefsStore(createPrefsStore(dir))
+    const before = await gql('{ preferences { capture { nativeMic } } }')
+    expect(before.data?.preferences.capture.nativeMic).toBe(false)
+    const after = await gql(
+      'mutation { updatePreferences(input: { capture: { nativeMic: true } }) { capture { enabled consentAck nativeMic } } }',
+    )
+    expect(after.errors).toBeUndefined()
+    expect(after.data?.updatePreferences.capture).toEqual({
+      enabled: false,
+      consentAck: false,
+      nativeMic: true,
+    })
   })
 
   test('keyStatus reports booleans only', async () => {
