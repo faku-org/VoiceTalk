@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> None:
 
     logging.basicConfig(level=args.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(Settings.from_env(glossary_path=args.glossary))
-    uvicorn.run(app, host=HOST, port=args.port, log_level=args.log_level, ws="websockets-sansio")
+    uvicorn.run(app, host=HOST, port=args.port, log_level=args.log_level, access_log=False, ws="websockets-sansio")
 
 
 if __name__ == "__main__":

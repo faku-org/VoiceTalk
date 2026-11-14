@@ -31,3 +31,5 @@ __pycache__/
 # model caches, if ever stored inside the repo
 voice/models/
 voice/.cache/
+
+.claude/
