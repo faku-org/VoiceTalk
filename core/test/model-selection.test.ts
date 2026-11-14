@@ -249,7 +249,7 @@ describe('runtime follows preferences', () => {
   })
   function fakeTtsFactory() {
     const made: Array<WarmableTts & { voice: string; closed: boolean }> = []
-    const make = (_key: string, voice: string) => {
+    const make = (_provider: string, _key: string, voice: string) => {
       const t = {
         name: 'fake',
         voice,
@@ -288,13 +288,13 @@ describe('runtime follows preferences', () => {
     expect(rt.llm).toBe(llm1)
     const tts1 = rt.tts as (typeof made)[number]
     expect(rt.tts).toBe(tts1)
-    expect(tts1.voice).toBe(DEFAULT_PREFERENCES.voiceId)
+    expect(tts1.voice).toBe(DEFAULT_PREFERENCES.tts.voices.cartesia)
 
     store.update({ brain: 'claude', llmUrl: 'http://10.0.0.5:9000/v1' })
     expect(rt.llm.name).toBe('claude@http://10.0.0.5:9000')
     expect(rt.llm).not.toBe(llm1)
 
-    store.update({ voiceId: 'voice-2' })
+    store.update({ tts: { voices: { cartesia: 'voice-2' } } })
     const tts2 = rt.tts as (typeof made)[number]
     expect(tts2).not.toBe(tts1)
     expect(tts2.voice).toBe('voice-2')
@@ -336,7 +336,13 @@ describe('runtime follows preferences', () => {
     const live = createLiveProviders({
       env: {},
       cartesiaApiKey: 'k',
-      prefs: () => ({ ...DEFAULT_PREFERENCES, voiceId: voice }),
+      prefs: () => ({
+        ...DEFAULT_PREFERENCES,
+        tts: {
+          ...DEFAULT_PREFERENCES.tts,
+          voices: { ...DEFAULT_PREFERENCES.tts.voices, cartesia: voice },
+        },
+      }),
       busy: () => busy,
       makeTts: make,
       graceMs: 1000,

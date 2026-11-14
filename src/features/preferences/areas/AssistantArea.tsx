@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Cpu, CircleCheck, CircleX, Zap, type LucideIcon } from 'lucide-react'
 import { Field, SectionTitle, inputClass } from '@/app/ui'
 import { useLoadedPrefs } from '@/app/prefsContext'
-import type { Brain, SttModel } from '@/app/prefsTypes'
+import type { Brain, SttModel, TtsProvider, TtsVoices } from '@/app/prefsTypes'
 import { SaveBar } from '../SaveBar'
 import { useAreaSave } from '../useAreaSave'
 import { collect, validateLlmUrl, validateVoiceId } from '../validation'
+import { VoiceField } from './VoiceField'
 
 const BRAINS: ReadonlyArray<{ id: Brain; label: string; hint: string }> = [
   {
@@ -71,17 +72,26 @@ export function AssistantArea() {
   const [brain, setBrain] = useState<Brain>(prefs.brain)
   const [stt, setStt] = useState<SttModel>(prefs.stt)
   const [llmUrl, setLlmUrl] = useState(prefs.llmUrl)
-  const [voiceId, setVoiceId] = useState(prefs.voiceId)
+  const [ttsProvider, setTtsProvider] = useState<TtsProvider>(
+    prefs.tts.provider,
+  )
+  const [voices, setVoices] = useState<TtsVoices>(prefs.tts.voices)
 
   const issues = collect([
     ['llmUrl', brain === 'local' ? validateLlmUrl(llmUrl) : null],
-    ['voiceId', validateVoiceId(voiceId)],
+    ['voiceId', validateVoiceId(voices[ttsProvider])],
   ])
   const { save, state, shownIssues, dirty } = useAreaSave(issues, () => ({
     brain,
     stt,
     llmUrl: llmUrl.trim(),
-    voiceId: voiceId.trim(),
+    tts: {
+      provider: ttsProvider,
+      voices: {
+        cartesia: voices.cartesia.trim(),
+        xai: voices.xai.trim(),
+      },
+    },
   }))
   const urlError = issues.find((i) => i.field === 'llmUrl')?.message ?? null
   const voiceError = issues.find((i) => i.field === 'voiceId')?.message ?? null
@@ -206,25 +216,20 @@ export function AssistantArea() {
         </Field>
       )}
 
-      <Field
-        label="Voz"
-        htmlFor="voice-id"
-        hint="Identificador de la voz en Cartesia. Por defecto, Sofía."
+      <VoiceField
+        provider={ttsProvider}
+        voices={voices}
         error={voiceError}
-      >
-        <input
-          id="voice-id"
-          className={`${inputClass} font-mono`}
-          value={voiceId}
-          onChange={(e) => {
-            setVoiceId(e.target.value)
-            dirty()
-          }}
-          aria-invalid={voiceError ? true : undefined}
-          aria-describedby={voiceError ? 'voice-id-error' : 'voice-id-hint'}
-          spellCheck={false}
-        />
-      </Field>
+        keyStatus={keyStatus}
+        onProvider={(next) => {
+          setTtsProvider(next)
+          dirty()
+        }}
+        onVoice={(id, voiceId) => {
+          setVoices((prev) => ({ ...prev, [id]: voiceId }))
+          dirty()
+        }}
+      />
 
       <div className="space-y-2">
         <h3 className="text-body-lg font-medium">Claves</h3>
@@ -233,6 +238,7 @@ export function AssistantArea() {
             label="Cartesia (voz)"
             present={keyStatus?.cartesia ?? false}
           />
+          <KeyLine label="xAI (voz)" present={keyStatus?.xai ?? false} />
           <KeyLine
             label="Anthropic (Claude)"
             present={keyStatus?.anthropic ?? false}

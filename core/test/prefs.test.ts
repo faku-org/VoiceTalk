@@ -100,7 +100,7 @@ describe('prefs store', () => {
     )
     const prefs = createPrefsStore(dir).get()
     expect(prefs.theme).toBe('light')
-    expect(prefs.voiceId).toBe(DEFAULT_PREFERENCES.voiceId)
+    expect(prefs.tts).toEqual(DEFAULT_PREFERENCES.tts)
   })
 
   test('has no secret fields', () => {
@@ -129,7 +129,7 @@ describe('GraphQL preferences', () => {
   test('query, update, and validation error', async () => {
     setPrefsStore(createPrefsStore(dir))
     const first = await gql(
-      '{ preferences { brain voiceId theme onboarding { version } thresholds { endOfTurnMs } } }',
+      '{ preferences { brain tts { provider voices { cartesia xai } } theme onboarding { version } thresholds { endOfTurnMs } } }',
     )
     expect(first.data?.preferences).toMatchObject({
       brain: 'local',

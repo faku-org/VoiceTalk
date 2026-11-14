@@ -1,5 +1,7 @@
 export type Brain = 'local' | 'claude'
 export type SttModel = 'phonon' | 'canary' | 'fluid'
+export type TtsProvider = 'cartesia' | 'xai'
+export type TtsVoices = Record<TtsProvider, string>
 export type { ThemePreference } from '@/lib/theme'
 import type { ThemePreference } from '@/lib/theme'
 
@@ -14,7 +16,8 @@ export interface Preferences {
   /** Speech recognition model; the voice service swaps it in the background. */
   stt: SttModel
   llmUrl: string
-  voiceId: string
+  /** Voice provider and the voice chosen for each one (ADR 0013). */
+  tts: { provider: TtsProvider; voices: TtsVoices }
   thresholds: Thresholds
   folders: string[]
   location: { manual: string; ipGeolocation: boolean }
@@ -29,7 +32,7 @@ export interface PreferencesPatch {
   brain?: Brain
   stt?: SttModel
   llmUrl?: string
-  voiceId?: string
+  tts?: { provider?: TtsProvider; voices?: Partial<TtsVoices> }
   thresholds?: Partial<Thresholds>
   folders?: string[]
   location?: Partial<Preferences['location']>
@@ -40,8 +43,19 @@ export interface PreferencesPatch {
 
 export interface KeyStatus {
   cartesia: boolean
+  xai: boolean
   anthropic: boolean
   discord: boolean
+}
+
+export interface TtsProviderInfo {
+  id: TtsProvider
+  name: string
+  /** Name of the environment variable, never its value. */
+  keyEnv: string
+  configured: boolean
+  defaultVoice: string
+  voices: Array<{ id: string; name: string; hint: string }>
 }
 
 export interface ModelStatus {
@@ -54,7 +68,8 @@ export interface ModelStatus {
 }
 
 export const PREFS_FIELDS = `
-  brain stt llmUrl voiceId folders theme
+  brain stt llmUrl folders theme
+  tts { provider voices { cartesia xai } }
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }
   capture { enabled consentAck }

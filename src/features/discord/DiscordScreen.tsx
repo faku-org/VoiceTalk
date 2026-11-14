@@ -125,7 +125,7 @@ function Picker({
           <p className="text-body text-muted">
             {status.canTalk
               ? `Solo cuando lo nombran (${status.names.join(', ') || 'su nombre'}).`
-              : 'Falta CARTESIA_API_KEY.'}
+              : 'Falta la clave de la voz elegida.'}
           </p>
         </div>
         <Switch
@@ -202,7 +202,7 @@ function Active({
           <p className="text-body text-muted">
             {status.canTalk
               ? 'Se corta apenas alguien empieza a hablar.'
-              : 'Falta CARTESIA_API_KEY.'}
+              : 'Falta la clave de la voz elegida.'}
           </p>
         </div>
         <Switch
