@@ -4,7 +4,7 @@ Desktop voice companion (Tauri v2, Windows). Turn-based voice calls with local s
 
 ```
 Tauri shell (Rust, React webview)
- ├─ core   Bun + Elysia + GraphQL (127.0.0.1:4310)  call loop, TTS, storage, ingest/RAG, Code Mode, prefs
+ ├─ core   Bun + Elysia + GraphQL (127.0.0.1:4310)  call loop, TTS, sessions and notes, ingest/RAG, Code Mode, prefs
  ├─ voice  Python + uv + FastAPI (loopback)         Silero VAD + Fluid Speech Pro STT over WS /stt
  └─ llama-server (external)                        LFM3-1.7B chat (:8080), EmbeddingGemma (:8891)
 ```
@@ -62,6 +62,7 @@ Every variable is optional except `CARTESIA_API_KEY`, which speech output needs.
 | `VT_FOLDERS`                      | core        | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`. |
 | `VT_DATA_DIR`                     | core        | SQLite and index. Default `core/.data` (gitignored).                          |
 | `VT_INGEST`                       | core        | `off` skips the folder watcher.                                               |
+| `VT_NOTES`                        | core        | `off` stops recording calls and the notes decision model.                     |
 | `VT_GLOSSARY`                     | voice       | Glossary TOML, default `voice/glossary.toml`.                                 |
 | `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars    | Set by the Tauri shell. Core default is 4310.                                 |
 | `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell | Overrides for the `bun`/`uv` paths and the repo root.                         |
@@ -128,8 +129,8 @@ The web UI works too: Settings > Secrets and variables > Actions > New repositor
 2. After the merge to `main`, tag it:
 
    ```powershell
-   git tag v0.5.0
-   git push origin v0.5.0
+   git tag v0.6.0
+   git push origin v0.6.0
    ```
 
 3. Check that the workflow is green and that the Release has the `.exe`, its `.sig` and `latest.json`.
