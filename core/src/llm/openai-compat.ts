@@ -1,6 +1,7 @@
 import {
   DEFAULT_MAX_TOKENS,
   isAbortError,
+  stripThinkTags,
   type ChatMessage,
   type ChatOptions,
   type ChatProvider,
@@ -39,7 +40,7 @@ export class OpenAiCompatChat implements ChatProvider {
     messages: ChatMessage[],
     opts: ChatOptions = {},
   ): AsyncIterable<string> {
-    return this.run(messages, opts)
+    return stripThinkTags(this.run(messages, opts))
   }
 
   private async *run(

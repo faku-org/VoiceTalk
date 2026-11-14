@@ -27,8 +27,13 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0009: Call capture](adr/0009-call-capture.md): per-process WASAPI loopback in Rust, `WS /capture`, consent.
 - [0010: Discord voice channels](adr/0010-discord.md): bot library, DAVE, per-user STT, talking gate, transparency.
 
+## Design
+
+- [Design brief](design/brief.md): what the app is, screens, Ether, tokens, open questions. Input for the design system.
+
 ## Fixes batches
 
+- [2026-11-14 (v0.9.1)](fixes-2026-11-14-v0.9.1/README.md): system audio cancellation, `</think>` leak, Ether in the call.
 - [2026-11-14 (v0.6.0)](fixes-2026-11-14-v0.6.0/README.md): brain providers, voice providers, chat tab, dashboard, generative UI, CUA. Roadmap: [project 6](https://github.com/orgs/faku-org/projects/6).
 
 ## Spikes
