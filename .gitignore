@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python (voice/)
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+# model caches, if ever stored inside the repo
+voice/models/
+voice/.cache/

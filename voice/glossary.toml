@@ -1,0 +1,34 @@
+# Glosario de correccion post-STT (opcion 1: sin hotwords).
+#
+# Cada [[terms]] es la forma correcta (`term`) y las formas mal oidas
+# frecuentes (`misheard`). La coincidencia ignora mayusculas y acentos.
+# Ademas de las formas listadas, se aplica coincidencia difusa (similitud
+# >= fuzzy_threshold) solo a palabras de al menos min_fuzzy_len caracteres,
+# para no reemplazar palabras cortas comunes.
+
+fuzzy_threshold = 0.85
+min_fuzzy_len = 5
+
+[[terms]]
+term = "VoiceTalk"
+misheard = ["voice talk", "voz talk", "vois talk"]
+
+[[terms]]
+term = "Cartesia"
+misheard = ["cartecia", "carte sia"]
+
+[[terms]]
+term = "WeFaber"
+misheard = ["we faber", "wefaver", "gefaber"]
+
+[[terms]]
+term = "LFM"
+misheard = ["elefeeme", "el efe eme"]
+
+[[terms]]
+term = "Tauri"
+misheard = ["tauri app", "tory"]
+
+[[terms]]
+term = "llama-server"
+misheard = ["llama server", "llamaserver"]
