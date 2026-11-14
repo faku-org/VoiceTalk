@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql'
-import type { Preferences } from './schema.ts'
+import { STT_MODELS, type Preferences } from './schema.ts'
 import { modelStatuses, type ModelStatus } from './models.ts'
 import { PreferencesError, getPrefsStore } from './store.ts'
 import { discordAvailable, loadDiscordConfig } from '../discord/config.ts'
@@ -14,6 +14,7 @@ export function registerPrefs(builder: AnyBuilder): void {
   const Brain = builder.enumType('Brain', {
     values: ['local', 'claude'] as const,
   })
+  const SttModel = builder.enumType('SttModel', { values: STT_MODELS })
   const Theme = builder.enumType('ThemePreference', {
     values: ['system', 'light', 'dark'] as const,
   })
@@ -56,6 +57,7 @@ export function registerPrefs(builder: AnyBuilder): void {
       brain: t.field({ type: Brain, resolve: (p: Preferences) => p.brain }),
       llmUrl: t.exposeString('llmUrl'),
       voiceId: t.exposeString('voiceId'),
+      stt: t.field({ type: SttModel, resolve: (p: Preferences) => p.stt }),
       thresholds: t.field({
         type: Thresholds,
         resolve: (p: Preferences) => p.thresholds,
@@ -133,6 +135,7 @@ export function registerPrefs(builder: AnyBuilder): void {
       brain: t.field({ type: Brain }),
       llmUrl: t.string(),
       voiceId: t.string(),
+      stt: t.field({ type: SttModel }),
       thresholds: t.field({ type: ThresholdsInput }),
       folders: t.stringList(),
       location: t.field({ type: LocationInput }),
@@ -149,7 +152,7 @@ export function registerPrefs(builder: AnyBuilder): void {
     }),
     models: t.field({
       type: [Model],
-      resolve: () => modelStatuses(),
+      resolve: () => modelStatuses(undefined, getPrefsStore().get().stt),
     }),
     keyStatus: t.field({
       type: KeyStatus,

@@ -8,8 +8,10 @@ import {
 } from './codemode/index.ts'
 import { loadStorageConfig, openDb, type StorageConfig } from './db/index.ts'
 import { Ingester } from './ingest/index.ts'
+import { liveChat } from './call/live.ts'
 import {
   loadLlmConfig,
+  normalizeBaseUrl,
   OpenAiCompatChat,
   type ChatProvider,
 } from './llm/index.ts'
@@ -57,17 +59,31 @@ export function createServices(
   const retriever = createRetriever({ db, store, embedder })
   const ingester = new Ingester({ db, store, embedder, allowlist })
   const llmConfig = loadLlmConfig()
+  // Local decision model; follows prefs.llmUrl (falls back to env when prefs are unreadable). Cached per URL.
+  let decisionUrl: string | null = null
+  let decision: ChatProvider | null = null
+  const liveDecisionLlm = (): ChatProvider =>
+    liveChat(() => {
+      let url = llmConfig.llmUrl
+      try {
+        url = normalizeBaseUrl(getPrefsStore().get().llmUrl)
+      } catch {
+        // keep the env URL
+      }
+      if (decision === null || url !== decisionUrl) {
+        decision = new OpenAiCompatChat({
+          baseUrl: url,
+          model: llmConfig.llmModel,
+          temperature: 0,
+        })
+        decisionUrl = url
+      }
+      return decision
+    })
   const notes = createNotesService({
     db,
     embedder,
-    llm:
-      overrides.llm === undefined
-        ? new OpenAiCompatChat({
-            baseUrl: llmConfig.llmUrl,
-            model: llmConfig.llmModel,
-            temperature: 0,
-          })
-        : overrides.llm,
+    llm: overrides.llm === undefined ? liveDecisionLlm() : overrides.llm,
     prefs: () => {
       const p = getPrefsStore().get()
       return {

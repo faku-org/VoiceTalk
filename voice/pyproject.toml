@@ -1,7 +1,7 @@
 [project]
 name = "voicetalk-voice"
-version = "0.9.1"
-description = "VoiceTalk voice sidecar: local STT (Fluid Speech Pro) + Silero VAD over WebSocket"
+version = "0.10.0"
+description = "VoiceTalk voice sidecar: selectable local STT (Phonon default, Canary, Fluid Speech Pro) + Silero VAD over WebSocket"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115",
@@ -12,6 +12,9 @@ dependencies = [
   "torch>=2.8",
   "transformers>=5.22",
   "silero-vad>=5.1",
+  "fermion-research",
+  "sherpa-onnx",
+  "huggingface_hub",
 ]
 
 [project.scripts]
