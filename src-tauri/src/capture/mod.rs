@@ -6,6 +6,7 @@
 
 pub mod apps;
 pub mod client;
+pub mod mic;
 pub mod resample;
 #[cfg(windows)]
 pub mod win;
@@ -306,7 +307,135 @@ mod manager {
     }
 }
 
+/// Native call mic (ADR 0014): WASAPI mic + loopback reference -> AEC3 -> RNNoise -> core `/call/mic`.
+#[cfg(windows)]
+mod native_mic {
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::mpsc::sync_channel;
+    use std::sync::{Arc, Mutex};
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
+
+    use tauri::{AppHandle, Emitter, State};
+
+    use super::client::{self, CaptureError};
+    use super::win;
+    use crate::sidecar::Supervisor;
+
+    const READY_TIMEOUT: Duration = Duration::from_secs(5);
+    /// Emitted when the native mic stops without being asked to (device lost, core closed the feeder).
+    const EVENT_LOST: &str = "native-mic://lost";
+
+    struct Active {
+        stop: Arc<AtomicBool>,
+        capture: win::Capture,
+        pump: JoinHandle<()>,
+    }
+
+    #[derive(Clone, Default)]
+    pub struct NativeMicManager {
+        inner: Arc<Mutex<Option<Active>>>,
+    }
+
+    impl NativeMicManager {
+        fn teardown(a: Active) {
+            a.stop.store(true, Ordering::SeqCst);
+            let _ = a.capture.thread.join();
+            let _ = a.pump.join();
+        }
+
+        pub fn start(&self, app: &AppHandle, core_url: &str) -> Result<(), CaptureError> {
+            // A previous session that already died on its own does not block a new one.
+            let previous = {
+                let mut guard = self.inner.lock().unwrap();
+                match guard.as_ref() {
+                    Some(a) if !a.pump.is_finished() => {
+                        return Err(CaptureError {
+                            code: "busy".into(),
+                            message: "El micrófono nativo ya está activo.".into(),
+                        })
+                    }
+                    _ => guard.take(),
+                }
+            };
+            if let Some(a) = previous {
+                Self::teardown(a);
+            }
+
+            let ws = client::connect_mic(core_url)?;
+            let stop = Arc::new(AtomicBool::new(false));
+            let (tx, rx) = sync_channel(256);
+            let capture = win::spawn_native_mic(stop.clone(), tx, Arc::new(AtomicU32::new(0)));
+            if let Err(message) = win::wait_ready(&capture, READY_TIMEOUT) {
+                // `rx` is dropped with the pump below: nothing to join but the capture thread.
+                stop.store(true, Ordering::SeqCst);
+                let _ = capture.thread.join();
+                drop(rx);
+                drop(ws);
+                return Err(CaptureError {
+                    code: "device".into(),
+                    message,
+                });
+            }
+            let pump = {
+                let stop = stop.clone();
+                let app = app.clone();
+                thread::Builder::new()
+                    .name("vt-native-mic-pump".into())
+                    .spawn(move || {
+                        let result = client::run_mic(ws, rx, stop.clone());
+                        // Stopped on purpose = `stop` was already up before the pump ended.
+                        let asked = stop.load(Ordering::SeqCst) && result.is_ok();
+                        stop.store(true, Ordering::SeqCst);
+                        if !asked {
+                            let _ = app.emit(EVENT_LOST, result.err());
+                        }
+                    })
+                    .expect("spawn native mic pump")
+            };
+            *self.inner.lock().unwrap() = Some(Active {
+                stop,
+                capture,
+                pump,
+            });
+            Ok(())
+        }
+
+        pub fn stop(&self) {
+            if let Some(a) = self.inner.lock().unwrap().take() {
+                Self::teardown(a);
+            }
+        }
+    }
+
+    #[tauri::command]
+    pub async fn native_mic_start(
+        app: AppHandle,
+        supervisor: State<'_, Supervisor>,
+        manager: State<'_, NativeMicManager>,
+    ) -> Result<(), CaptureError> {
+        let core_url = supervisor.core_url();
+        let manager = manager.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || manager.start(&app, &core_url))
+            .await
+            .map_err(|e| CaptureError {
+                code: "connect".into(),
+                message: e.to_string(),
+            })?
+    }
+
+    #[tauri::command]
+    pub async fn native_mic_stop(manager: State<'_, NativeMicManager>) -> Result<(), String> {
+        let manager = manager.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || manager.stop())
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
 #[cfg(windows)]
 pub use manager::{
     capture_list_sources, capture_start, capture_status, capture_stop, CaptureManager,
 };
+#[cfg(windows)]
+pub use native_mic::{native_mic_start, native_mic_stop, NativeMicManager};

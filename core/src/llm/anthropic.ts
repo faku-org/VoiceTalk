@@ -6,6 +6,7 @@ import {
   type ChatOptions,
   type ChatProvider,
 } from './provider.ts'
+import { claudeThinking, THINKING_HEADROOM, type Effort } from './presets.ts'
 
 export const ANTHROPIC_MODEL = 'claude-haiku-5-5'
 
@@ -22,19 +23,23 @@ export interface AnthropicStreamClient {
 export interface AnthropicChatOptions {
   apiKey: string
   model?: string
+  /** Thinking effort. Default `off`: a spoken reply gains little and thinking is latency. */
+  effort?: Effort
   client?: AnthropicStreamClient
 }
 
-// Optional cloud brain (VT_BRAIN=claude). Thinking off and low effort: a spoken reply of two
-// or three sentences gains nothing from reasoning and every token before the first word is latency.
+// Cloud brain (provider `claude`). Effort maps to Anthropic's adaptive thinking plus
+// `output_config.effort` (see claudeThinking); `off` keeps thinking disabled where the model allows.
 export class AnthropicChat implements ChatProvider {
   readonly name = 'claude'
   private readonly client: AnthropicStreamClient
   private readonly model: string
+  private readonly effort: Effort
 
   constructor(opts: AnthropicChatOptions) {
     this.client = opts.client ?? new Anthropic({ apiKey: opts.apiKey })
-    this.model = opts.model ?? ANTHROPIC_MODEL
+    this.model = opts.model || ANTHROPIC_MODEL
+    this.effort = opts.effort ?? 'off'
   }
 
   stream(
@@ -60,6 +65,7 @@ export class AnthropicChat implements ChatProvider {
         content: m.content,
       }))
 
+    const think = claudeThinking(this.model, this.effort)
     const controller = new AbortController()
     const onAbort = (): void => controller.abort()
     opts.signal?.addEventListener('abort', onAbort, { once: true })
@@ -67,11 +73,13 @@ export class AnthropicChat implements ChatProvider {
       const stream = this.client.messages.stream(
         {
           model: this.model,
-          max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
+          max_tokens:
+            (opts.maxTokens ?? DEFAULT_MAX_TOKENS) +
+            THINKING_HEADROOM[this.effort],
           ...(system ? { system } : {}),
           messages: turns,
-          thinking: { type: 'disabled' },
-          output_config: { effort: 'low' },
+          ...(think.thinking ? { thinking: think.thinking } : {}),
+          output_config: { effort: think.effort },
         },
         { signal: controller.signal },
       )

@@ -1,4 +1,5 @@
 import { CircleAlert, Mic, PhoneOff } from 'lucide-react'
+import { usePrefs } from '@/app/prefsContext'
 import { formatClock } from '@/features/capture/protocol'
 import { CallTranscript } from './CallTranscript'
 import { useAfter, useElapsedSeconds, useMediaQuery } from './call-hooks'
@@ -24,7 +25,11 @@ export function CallScreen({
   /** Sidecar or model missing: Ether shows `offline` and says why. */
   offline?: boolean
 }) {
-  const { view, levels, start, stop } = useCall(corePort)
+  const { prefs } = usePrefs()
+  const { view, levels, start, stop } = useCall(
+    corePort,
+    prefs?.capture.nativeMic ?? false,
+  )
   const wide = useMediaQuery('(min-width: 1024px)')
   const inCall = view.phase !== 'idle'
   // After a call the transcript stays: keep the two-part layout instead of dropping it.

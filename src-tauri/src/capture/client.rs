@@ -235,6 +235,65 @@ pub fn run(mut ws: Socket, rx: Receiver<Frame>, abort: Arc<AtomicBool>) -> Outco
     Outcome::Failed(CaptureError::new("connect", "core did not confirm the end"))
 }
 
+/// Connects the native mic to the call that is already running (`WS /call/mic`, ADR 0014). No handshake messages:
+/// the upgrade itself is the confirmation (core answers 409 with no live call, or if a mic is already attached).
+pub fn connect_mic(core_url: &str) -> Result<Socket, CaptureError> {
+    let addr = host_port(core_url);
+    let sock_addr = addr
+        .to_socket_addrs()
+        .map_err(|e| CaptureError::new("connect", format!("bad core address {addr}: {e}")))?
+        .next()
+        .ok_or_else(|| CaptureError::new("connect", format!("bad core address {addr}")))?;
+    let stream = TcpStream::connect_timeout(&sock_addr, CONNECT_TIMEOUT)
+        .map_err(|e| CaptureError::new("connect", format!("core is not reachable: {e}")))?;
+    let _ = stream.set_nodelay(true);
+    let url = format!("ws://{addr}/call/mic");
+    let (ws, _) = client(url.as_str(), stream).map_err(|e| match e {
+        tungstenite::HandshakeError::Failure(tungstenite::Error::Http(resp))
+            if resp.status().as_u16() == 409 =>
+        {
+            CaptureError::new("busy", "No hay una llamada activa o el micrófono ya está conectado.")
+        }
+        other => CaptureError::new("connect", other.to_string()),
+    })?;
+    ws.get_ref()
+        .set_read_timeout(Some(POLL))
+        .map_err(|e| CaptureError::new("connect", e.to_string()))?;
+    Ok(ws)
+}
+
+/// Pumps 640 B mic frames to `/call/mic` until `rx` disconnects (we stop) or core closes the socket (the call ended,
+/// or it dropped us). Either way `abort` is raised so the capture thread stops too. `Ok` = orderly end.
+pub fn run_mic(mut ws: Socket, rx: Receiver<Vec<u8>>, abort: Arc<AtomicBool>) -> Result<(), CaptureError> {
+    let result = (|| loop {
+        match rx.recv_timeout(POLL) {
+            Ok(frame) => {
+                ws.send(Message::binary(frame))
+                    .map_err(|e| CaptureError::new("connect", e.to_string()))?;
+                for _ in 0..64 {
+                    let Ok(frame) = rx.try_recv() else { break };
+                    ws.send(Message::binary(frame))
+                        .map_err(|e| CaptureError::new("connect", e.to_string()))?;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Ok(()),
+        }
+        match ws.read() {
+            Ok(Message::Close(_)) => return Ok(()),
+            Ok(_) => {}
+            Err(e) if is_timeout(&e) => {}
+            Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
+                return Ok(())
+            }
+            Err(e) => return Err(CaptureError::new("connect", e.to_string())),
+        }
+    })();
+    abort.store(true, Ordering::SeqCst);
+    let _ = ws.close(None);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +402,57 @@ mod tests {
         let err = connect(&url, "zoom", None).err().unwrap();
         assert_eq!(err.code, "consent");
         assert_eq!(err.message, "Falta el aviso");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn mic_feeder_sends_raw_frames_and_stops_when_core_closes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(stream).unwrap();
+            let mut got = Vec::new();
+            while got.len() < 2 {
+                if let Ok(Message::Binary(b)) = ws.read() {
+                    got.push(b.to_vec());
+                }
+            }
+            // The call ended: core closes the feeder.
+            let _ = ws.close(None);
+            let _ = ws.flush();
+            got
+        });
+        let ws = connect_mic(&url).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let abort = Arc::new(AtomicBool::new(false));
+        let a2 = abort.clone();
+        let pump = thread::spawn(move || run_mic(ws, rx, a2));
+        tx.send(vec![1; 640]).unwrap();
+        tx.send(vec![2; 640]).unwrap();
+        // `tx` stays alive: only core closing can end the pump here.
+        assert_eq!(pump.join().unwrap(), Ok(()));
+        assert!(abort.load(Ordering::SeqCst));
+        let got = server.join().unwrap();
+        assert_eq!(got, vec![vec![1; 640], vec![2; 640]]);
+        drop(tx);
+    }
+
+    #[test]
+    fn mic_feeder_without_a_call_is_busy() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 2048];
+            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let _ = std::io::Write::write_all(
+                &mut stream,
+                b"HTTP/1.1 409 Conflict\r\nContent-Length: 14\r\nConnection: close\r\n\r\nno active call",
+            );
+        });
+        let err = connect_mic(&url).err().unwrap();
+        assert_eq!(err.code, "busy");
         server.join().unwrap();
     }
 

@@ -1,3 +1,7 @@
 export * from './provider.ts'
+export * from './catalog.ts'
 export * from './cartesia.ts'
 export * from './cartesia-persistent.ts'
+export * from './xai.ts'
+export * from './registry.ts'
+export * from './preview.ts'

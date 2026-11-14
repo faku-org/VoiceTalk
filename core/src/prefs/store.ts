@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import {
   DEFAULT_PREFERENCES,
   mergePreferences,
+  migrateLegacyPreferences,
   patchSchema,
   preferencesSchema,
   type Preferences,
@@ -45,18 +46,23 @@ export interface PrefsStore {
   readonly path: string
   get(): Preferences
   update(patch: unknown): Preferences
+  /** Called after every successful update with (next, previous). Returns the unsubscribe. */
+  subscribe(listener: PrefsListener): () => void
 }
+
+export type PrefsListener = (next: Preferences, prev: Preferences) => void
 
 /** Preferences as one JSON file. Secrets never go in here (see ADR 0007). */
 export function createPrefsStore(dir: string): PrefsStore {
   const path = join(dir, FILE_NAME)
   let current: Preferences | null = null
+  const listeners = new Set<PrefsListener>()
 
   function read(): Preferences {
     if (!existsSync(path)) return DEFAULT_PREFERENCES
     try {
       const raw: unknown = JSON.parse(readFileSync(path, 'utf8'))
-      const partial = patchSchema.safeParse(raw)
+      const partial = patchSchema.safeParse(migrateLegacyPreferences(raw))
       if (partial.success) {
         const merged = preferencesSchema.safeParse(
           mergePreferences(DEFAULT_PREFERENCES, partial.data),
@@ -89,7 +95,7 @@ export function createPrefsStore(dir: string): PrefsStore {
       return current
     },
     update(patch) {
-      const parsed = patchSchema.safeParse(patch)
+      const parsed = patchSchema.safeParse(migrateLegacyPreferences(patch))
       if (!parsed.success) {
         throw new PreferencesError(
           parsed.error.issues
@@ -107,9 +113,23 @@ export function createPrefsStore(dir: string): PrefsStore {
             .join('; '),
         )
       }
+      const prev = this.get()
       write(next.data)
       current = next.data
+      for (const listener of [...listeners]) {
+        try {
+          listener(next.data, prev)
+        } catch {
+          // a bad listener never fails the update
+        }
+      }
       return next.data
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
     },
   }
 }
