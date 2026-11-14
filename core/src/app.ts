@@ -27,6 +27,17 @@ export function createCore(config: CoreConfig, services?: Services): Core {
         return services
       },
     }),
+    // Only the app webview may call core from a browser context.
+    cors: {
+      origin: [
+        'http://localhost:1420',
+        'http://127.0.0.1:1420',
+        'tauri://localhost',
+        'http://tauri.localhost',
+        'https://tauri.localhost',
+      ],
+      methods: ['POST', 'GET', 'OPTIONS'],
+    },
   })
 
   const app = new Elysia()

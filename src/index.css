@@ -1,75 +1,24 @@
 @import 'tailwindcss';
+@import '@wefaber/tokens/themes/azul.css';
+@import '@wefaber/tokens/theme.css';
 
 /*
- * VoiceTalk tokens (DESIGN.md roles). Names never change between themes; values do.
- * Contrast vs. the canvas role, AA minimum:
- *   light: text #1c1b19 on #f7f7f5 16.0:1 · text-muted #5c5a55 6.4:1 on canvas · danger #b42318 6.6:1 on surface
- *   dark:  text #ececea on #121316 15.7:1 · text-muted #a3a19b 7.2:1 on canvas · danger #ff8a80 7.5:1 on surface
+ * Aliases for the first-skeleton token names (canvas / text-muted / hairline),
+ * so screens written before the move to @wefaber/tokens keep rendering.
+ * New code uses the house roles: bg, surface, border, muted.
  */
-@theme {
-  --color-canvas: var(--canvas);
-  --color-surface: var(--surface);
-  --color-text: var(--text);
+@theme inline {
+  --color-canvas: var(--bg);
   --color-text-muted: var(--text-muted);
-  --color-hairline: var(--hairline);
-  --color-accent: var(--accent);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
-
-  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, Consolas, monospace;
-}
-
-:root {
-  --canvas: #f7f7f5;
-  --surface: #ffffff;
-  --text: #1c1b19;
-  --text-muted: #5c5a55;
-  --hairline: #e2e1dc;
-  --accent: #2f5d8a;
-  --success: #2e7d4f;
-  --warning: #9a6700;
-  --danger: #b42318;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --canvas: #121316;
-    --surface: #1b1c21;
-    --text: #ececea;
-    --text-muted: #a3a19b;
-    --hairline: #2c2d34;
-    --accent: #8ab4f8;
-    --success: #6fcf97;
-    --warning: #f2c46d;
-    --danger: #ff8a80;
-  }
-}
-
-:root[data-theme='dark'] {
-  --canvas: #121316;
-  --surface: #1b1c21;
-  --text: #ececea;
-  --text-muted: #a3a19b;
-  --hairline: #2c2d34;
-  --accent: #8ab4f8;
-  --success: #6fcf97;
-  --warning: #f2c46d;
-  --danger: #ff8a80;
+  --color-hairline: var(--border);
 }
 
 html,
-body {
-  margin: 0;
-  background: var(--canvas);
-  color: var(--text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
+body,
+#root {
+  min-height: 100dvh;
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+body {
+  margin: 0;
 }

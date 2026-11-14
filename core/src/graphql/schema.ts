@@ -4,6 +4,7 @@ import type { TranscriptEntry } from '../call/events.ts'
 import { VERSION } from '../version.ts'
 import { registerStorage } from './storage.ts'
 import type { Services } from '../services.ts'
+import { registerPrefs } from '../prefs/graphql.ts'
 
 interface Health {
   ok: boolean
@@ -67,8 +68,10 @@ builder.queryType({
   }),
 })
 
+// The Mutation root is declared once here; each module adds fields.
 builder.mutationType({})
 
 registerStorage(builder)
+registerPrefs(builder)
 
 export const schema = builder.toSchema()

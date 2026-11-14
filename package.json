@@ -1,7 +1,7 @@
 {
   "name": "voicetalk",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.5.0",
   "type": "module",
   "workspaces": [
     "core"
@@ -21,6 +21,10 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
+    "@wefaber/tokens": "^0.2.1",
     "animejs": "^4.5.0",
     "lucide-react": "^1.72.0",
     "motion": "^14.14.0",
