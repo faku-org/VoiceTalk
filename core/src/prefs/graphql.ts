@@ -1,8 +1,27 @@
 import { GraphQLError } from 'graphql'
-import { DETECT_RULES, type DetectRule, type Preferences } from './schema.ts'
+import { EFFORTS, KEY_ENV, PROVIDERS, STYLES } from '../llm/presets.ts'
+import {
+  DETECT_RULES,
+  STT_MODELS,
+  type DetectRule,
+  type Preferences,
+} from './schema.ts'
 import { modelStatuses, type ModelStatus } from './models.ts'
 import { PreferencesError, getPrefsStore } from './store.ts'
 import { discordAvailable, loadDiscordConfig } from '../discord/config.ts'
+import {
+  TTS_CATALOG,
+  TTS_PROVIDERS,
+  type TtsProviderId,
+} from '../tts/catalog.ts'
+import { synthesizePreview } from '../tts/preview.ts'
+import { createTtsProvider, ttsKeysFromEnv } from '../tts/registry.ts'
+
+/** Test seam for the voice preview: the environment it reads keys from and the adapter factory. */
+export const ttsPreviewHooks: {
+  env: () => Record<string, string | undefined>
+  make: typeof createTtsProvider | undefined
+} = { env: () => process.env, make: undefined }
 
 // Registered from graphql/schema.ts with one call, so the shared schema file
 // only gains an import and a line. The builder generic is erased on purpose:
@@ -11,13 +30,42 @@ import { discordAvailable, loadDiscordConfig } from '../discord/config.ts'
 type AnyBuilder = PothosSchemaTypes.SchemaBuilder<any>
 
 export function registerPrefs(builder: AnyBuilder): void {
-  const Brain = builder.enumType('Brain', {
-    values: ['local', 'claude'] as const,
+  const BrainProvider = builder.enumType('BrainProvider', {
+    values: PROVIDERS,
+  })
+  const ThinkingEffort = builder.enumType('ThinkingEffort', {
+    values: EFFORTS,
+  })
+  const BrainStyle = builder.enumType('BrainStyle', { values: STYLES })
+  const SttModel = builder.enumType('SttModel', { values: STT_MODELS })
+  const TtsProvider = builder.enumType('TtsProvider', {
+    values: TTS_PROVIDERS,
   })
   const Theme = builder.enumType('ThemePreference', {
     values: ['system', 'light', 'dark'] as const,
   })
 
+  const Brain = builder
+    .objectRef<Preferences['brain']>('BrainPreference')
+    .implement({
+      fields: (t) => ({
+        provider: t.field({
+          type: BrainProvider,
+          resolve: (b: Preferences['brain']) => b.provider,
+        }),
+        model: t.exposeString('model'),
+        baseUrl: t.exposeString('baseUrl'),
+        effort: t.field({
+          type: ThinkingEffort,
+          resolve: (b: Preferences['brain']) => b.effort,
+        }),
+        style: t.field({
+          type: BrainStyle,
+          resolve: (b: Preferences['brain']) => b.style,
+        }),
+        systemPrompt: t.exposeString('systemPrompt'),
+      }),
+    })
   const Thresholds = builder
     .objectRef<Preferences['thresholds']>('DecisionThresholds')
     .implement({
@@ -75,6 +123,29 @@ export function registerPrefs(builder: AnyBuilder): void {
           type: Detect,
           resolve: (c: Preferences['capture']) => c.detect,
         }),
+        nativeMic: t.exposeBoolean('nativeMic'),
+      }),
+    })
+  const TtsVoices = builder
+    .objectRef<Preferences['tts']['voices']>('TtsVoicePreferences')
+    .implement({
+      fields: (t) => ({
+        cartesia: t.exposeString('cartesia'),
+        xai: t.exposeString('xai'),
+      }),
+    })
+  const TtsPref = builder
+    .objectRef<Preferences['tts']>('TtsPreference')
+    .implement({
+      fields: (t) => ({
+        provider: t.field({
+          type: TtsProvider,
+          resolve: (p: Preferences['tts']) => p.provider,
+        }),
+        voices: t.field({
+          type: TtsVoices,
+          resolve: (p: Preferences['tts']) => p.voices,
+        }),
       }),
     })
   const Onboarding = builder
@@ -89,7 +160,8 @@ export function registerPrefs(builder: AnyBuilder): void {
     fields: (t) => ({
       brain: t.field({ type: Brain, resolve: (p: Preferences) => p.brain }),
       llmUrl: t.exposeString('llmUrl'),
-      voiceId: t.exposeString('voiceId'),
+      tts: t.field({ type: TtsPref, resolve: (p: Preferences) => p.tts }),
+      stt: t.field({ type: SttModel, resolve: (p: Preferences) => p.stt }),
       thresholds: t.field({
         type: Thresholds,
         resolve: (p: Preferences) => p.thresholds,
@@ -114,13 +186,22 @@ export function registerPrefs(builder: AnyBuilder): void {
 
   // Only booleans: key values never reach GraphQL, let alone the webview.
   const KeyStatus = builder
-    .objectRef<{ cartesia: boolean; anthropic: boolean; discord: boolean }>(
-      'KeyStatus',
-    )
+    .objectRef<{
+      cartesia: boolean
+      anthropic: boolean
+      openai: boolean
+      xai: boolean
+      custom: boolean
+      discord: boolean
+    }>('KeyStatus')
     .implement({
       fields: (t) => ({
         cartesia: t.exposeBoolean('cartesia'),
         anthropic: t.exposeBoolean('anthropic'),
+        openai: t.exposeBoolean('openai'),
+        xai: t.exposeBoolean('xai'),
+        // Optional key of the custom endpoint.
+        custom: t.exposeBoolean('custom'),
         // Bot token set and VT_DISCORD not off.
         discord: t.exposeBoolean('discord'),
       }),
@@ -137,6 +218,62 @@ export function registerPrefs(builder: AnyBuilder): void {
     }),
   })
 
+  interface TtsProviderRow {
+    id: TtsProviderId
+    name: string
+    keyEnv: string
+    configured: boolean
+    defaultVoice: string
+    voices: { id: string; name: string; hint: string }[]
+  }
+  const TtsVoiceRow = builder
+    .objectRef<{ id: string; name: string; hint: string }>('TtsVoice')
+    .implement({
+      fields: (t) => ({
+        id: t.exposeString('id'),
+        name: t.exposeString('name'),
+        hint: t.exposeString('hint'),
+      }),
+    })
+  const TtsProviderRowRef = builder
+    .objectRef<TtsProviderRow>('TtsProviderInfo')
+    .implement({
+      fields: (t) => ({
+        id: t.field({
+          type: TtsProvider,
+          resolve: (p: TtsProviderRow) => p.id,
+        }),
+        name: t.exposeString('name'),
+        // Name of the variable, never its value.
+        keyEnv: t.exposeString('keyEnv'),
+        configured: t.exposeBoolean('configured'),
+        defaultVoice: t.exposeString('defaultVoice'),
+        voices: t.field({
+          type: [TtsVoiceRow],
+          resolve: (p: TtsProviderRow) => p.voices,
+        }),
+      }),
+    })
+  const VoicePreview = builder
+    .objectRef<{ sampleRate: number; pcm: string }>('VoicePreview')
+    .implement({
+      fields: (t) => ({
+        sampleRate: t.exposeInt('sampleRate'),
+        // pcm_s16le mono, base64. Played in the webview with Web Audio (the CSP blocks data: media).
+        pcm: t.exposeString('pcm'),
+      }),
+    })
+
+  const BrainInput = builder.inputType('BrainPreferenceInput', {
+    fields: (t) => ({
+      provider: t.field({ type: BrainProvider }),
+      model: t.string(),
+      baseUrl: t.string(),
+      effort: t.field({ type: ThinkingEffort }),
+      style: t.field({ type: BrainStyle }),
+      systemPrompt: t.string(),
+    }),
+  })
   const ThresholdsInput = builder.inputType('DecisionThresholdsInput', {
     fields: (t) => ({
       respondConfidence: t.float(),
@@ -167,6 +304,19 @@ export function registerPrefs(builder: AnyBuilder): void {
       enabled: t.boolean(),
       consentAck: t.boolean(),
       detect: t.field({ type: DetectInput }),
+      nativeMic: t.boolean(),
+    }),
+  })
+  const TtsVoicesInput = builder.inputType('TtsVoicePreferencesInput', {
+    fields: (t) => ({
+      cartesia: t.string(),
+      xai: t.string(),
+    }),
+  })
+  const TtsInput = builder.inputType('TtsPreferenceInput', {
+    fields: (t) => ({
+      provider: t.field({ type: TtsProvider }),
+      voices: t.field({ type: TtsVoicesInput }),
     }),
   })
   const OnboardingInput = builder.inputType('OnboardingRecordInput', {
@@ -177,9 +327,10 @@ export function registerPrefs(builder: AnyBuilder): void {
   })
   const PreferencesInput = builder.inputType('PreferencesInput', {
     fields: (t) => ({
-      brain: t.field({ type: Brain }),
+      brain: t.field({ type: BrainInput }),
       llmUrl: t.string(),
-      voiceId: t.string(),
+      tts: t.field({ type: TtsInput }),
+      stt: t.field({ type: SttModel }),
       thresholds: t.field({ type: ThresholdsInput }),
       folders: t.stringList(),
       location: t.field({ type: LocationInput }),
@@ -196,15 +347,35 @@ export function registerPrefs(builder: AnyBuilder): void {
     }),
     models: t.field({
       type: [Model],
-      resolve: () => modelStatuses(),
+      resolve: () => modelStatuses(undefined, getPrefsStore().get().stt),
     }),
     keyStatus: t.field({
       type: KeyStatus,
       resolve: () => ({
         cartesia: Boolean(process.env.CARTESIA_API_KEY?.trim()),
-        anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+        anthropic: Boolean(process.env[KEY_ENV.anthropic]?.trim()),
+        openai: Boolean(process.env[KEY_ENV.openai]?.trim()),
+        xai: Boolean(process.env[KEY_ENV.xai]?.trim()),
+        custom: Boolean(process.env[KEY_ENV.custom]?.trim()),
         discord: discordAvailable(loadDiscordConfig()),
       }),
+    }),
+    ttsProviders: t.field({
+      type: [TtsProviderRowRef],
+      resolve: (): TtsProviderRow[] => {
+        const keys = ttsKeysFromEnv(ttsPreviewHooks.env())
+        return TTS_PROVIDERS.map((id) => {
+          const info = TTS_CATALOG[id]
+          return {
+            id,
+            name: info.name,
+            keyEnv: info.keyEnv,
+            configured: Boolean(keys[id]),
+            defaultVoice: info.defaultVoice,
+            voices: [...info.voices],
+          }
+        })
+      },
     }),
   }))
 
@@ -224,6 +395,35 @@ export function registerPrefs(builder: AnyBuilder): void {
             })
           }
           throw err
+        }
+      },
+    }),
+    previewVoice: t.field({
+      type: VoicePreview,
+      args: {
+        provider: t.arg({ type: TtsProvider, required: true }),
+        voiceId: t.arg.string(),
+      },
+      resolve: async (
+        _root: unknown,
+        args: { provider: TtsProviderId; voiceId?: string | null },
+      ) => {
+        const result = await synthesizePreview({
+          keys: ttsKeysFromEnv(ttsPreviewHooks.env()),
+          provider: args.provider,
+          voiceId: args.voiceId ?? undefined,
+          make: ttsPreviewHooks.make,
+        })
+        if (!result.ok) {
+          throw new GraphQLError(result.message, {
+            extensions: {
+              code: `VOICE_PREVIEW_${result.reason.toUpperCase().replace('-', '_')}`,
+            },
+          })
+        }
+        return {
+          sampleRate: result.sampleRate,
+          pcm: Buffer.from(result.pcm).toString('base64'),
         }
       },
     }),

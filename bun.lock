@@ -5,10 +5,13 @@
     "": {
       "name": "voicetalk",
       "dependencies": {
+        "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+        "@fontsource/averia-serif-libre": "^5.3.0",
         "@tauri-apps/api": "^2.12.4",
         "@tauri-apps/plugin-dialog": "^2.8.4",
         "@tauri-apps/plugin-process": "^2.4.0",
         "@tauri-apps/plugin-updater": "^2.14.1",
+        "@wefaber/orb": "^0.2.0",
         "@wefaber/tokens": "^0.2.1",
         "animejs": "^4.5.0",
         "lucide-react": "^1.72.0",
@@ -127,6 +130,10 @@
     "@envelop/types": ["@envelop/types@6.0.1", "", { "dependencies": { "@whatwg-node/promise-helpers": "^2.0.2", "tslib": "^2.5.0" } }, "sha512-3XOc8X4FRZdKFMmSVDlHJSBIK4jKtzBpnnoKwI7Qoq1k8aqpYHJg2IXnNKpdOubB9xKsWZvIlqSCOWtAg4td+A=="],
 
     "@fastify/busboy": ["@fastify/busboy@3.2.5", "", {}, "sha512-y8MTAeBlEQUNVnskmZQwpseZN3EgCksQNOULlfxWY6o6VEqh01+oExMgbM7gN6YLQ8pNDYeweNPKJRt8jQm2ZQ=="],
+
+    "@fontsource-variable/bricolage-grotesque": ["@fontsource-variable/bricolage-grotesque@5.3.0", "", {}, "sha512-TLi9Q4hJjS2UvoTMRSS2nHu6c4R56lAw60NR9QYtVRCHn0XtsFpiEhNffZ8Glsoxu6wEEwLKBP8lb94J52PNBA=="],
+
+    "@fontsource/averia-serif-libre": ["@fontsource/averia-serif-libre@5.3.0", "", {}, "sha512-rjZmEKNuUrh1AmjCiikhMwCBO0Ce5is9Y1BhSuo6PY5S9bymdI84TRMO96pUDgBIPpClLivFDp7pUBDWGckEpA=="],
 
     "@graphql-hive/logger": ["@graphql-hive/logger@1.1.1", "", { "peerDependencies": { "@logtape/logtape": "^1.2.0 || ^2.0.0", "pino": "^9.13.0 || ^10.0.0", "winston": "*" }, "optionalPeers": ["@logtape/logtape", "pino", "winston"] }, "sha512-fVUlEQCpnJnR/KJeEDHZbEDwEq4fMNTjKvicauCFMfxPLlcpIWdrscXpI/azwQkpsARyWPV0RnwdgjZIrFBmwQ=="],
 
@@ -465,6 +472,8 @@
     "@wefaber/codemode-sandbox-quickjs": ["@wefaber/codemode-sandbox-quickjs@0.4.0", "", { "dependencies": { "@wefaber/codemode": "0.3.1", "quickjs-emscripten": "^0.32.0" } }, "sha512-i329jZIn//dxZ4f+PI+lrxvLdwHHW/LWSL8p3S1QGFSLhXqWuFySjoWbuuFS5+kuh9WyWmEu5N5287wL5tSbig=="],
 
     "@wefaber/embed": ["@wefaber/embed@0.1.1", "", {}, "sha512-1n/KzxRHSq23shdXk327tpwZpiJ+lIClKQWKImlVSPl0rhp9JTsCbMDMEXhj5RV4l2PdLxvCP8ChE03s9YmVEQ=="],
+
+    "@wefaber/orb": ["@wefaber/orb@0.2.0", "", { "peerDependencies": { "animejs": "^4.5.0", "react": "^19.0.0" } }, "sha512-I9UfwwzZK+xBwNyxBnBr4GukG3uZNEDiBduKK6Duj3DDiBddqBaoZJvVNhZ9/27PqNaGpjd4XmkP5gnwo+XlqA=="],
 
     "@wefaber/tokens": ["@wefaber/tokens@0.2.1", "", { "peerDependencies": { "tailwindcss": "^4.1.0" } }, "sha512-M8bRoK333prSxKbaVp8U/VVjFSPOunMISEzg/tOZar9/lxgfWnmQgguPnBULSo7Qo07rYRfkNyWG5aE2bFNLWA=="],
 

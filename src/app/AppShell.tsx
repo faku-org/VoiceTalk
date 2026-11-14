@@ -71,7 +71,7 @@ function RecordingBar({
   return (
     <div
       role="status"
-      className="sticky top-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-danger bg-surface px-4 py-2 text-body-lg sm:px-8"
+      className="sticky top-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 surface-recording px-4 py-2 text-body-lg sm:px-8"
     >
       <CircleDot className="size-4 shrink-0 text-danger" aria-hidden="true" />
       <span className="font-medium text-danger">Grabando llamada</span>
@@ -109,7 +109,7 @@ export function AppShell() {
         aria-label="Secciones"
         className="sticky top-0 flex h-dvh w-14 shrink-0 flex-col gap-1 border-r border-border bg-surface p-2 md:w-56 md:p-3"
       >
-        <p className="hidden px-3 pb-3 pt-1 text-h3 font-semibold tracking-tight md:block">
+        <p className="hidden px-3 pb-3 pt-1 font-display text-h3 font-semibold tracking-tight md:block">
           VoiceTalk
         </p>
         {nav.map(({ id, label, icon: Icon }) => {
@@ -160,7 +160,7 @@ export function AppShell() {
           {recording && (
             <div
               role="status"
-              className="mb-6 flex items-center gap-2 rounded-control border border-danger/40 bg-danger/10 px-3 py-2 text-body text-danger"
+              className="mb-6 flex items-center gap-2 surface-recording rounded-control px-3 py-2 text-body text-danger"
             >
               <CircleDot className="size-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1">

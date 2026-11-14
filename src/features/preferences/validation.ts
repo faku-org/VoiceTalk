@@ -22,6 +22,31 @@ export function validateLlmUrl(value: string): string | null {
   return null
 }
 
+/** Endpoint of an Ollama or custom brain. Empty is fine unless `required`. */
+export function validateBrainEndpoint(
+  value: string,
+  required: boolean,
+): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return required ? 'Indica la dirección del servidor.' : null
+  return validateLlmUrl(trimmed)
+}
+
+export function validateBrainModel(value: string): string | null {
+  return value.trim().length > 120
+    ? 'El nombre del modelo admite hasta 120 caracteres.'
+    : null
+}
+
+export function validateSystemPrompt(
+  value: string,
+  max: number,
+): string | null {
+  return value.length > max
+    ? `Las instrucciones admiten hasta ${max} caracteres.`
+    : null
+}
+
 export function validateVoiceId(value: string): string | null {
   const trimmed = value.trim()
   if (!trimmed) return 'El identificador de voz no puede estar vacío.'

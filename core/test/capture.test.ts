@@ -129,6 +129,7 @@ describe('capture gate', () => {
       enabled: false,
       consentAck: false,
       detect: { enabled: true, rules: {} },
+      nativeMic: false,
     })
     const next = mergePreferences(DEFAULT_PREFERENCES, {
       capture: { consentAck: true },
@@ -137,6 +138,7 @@ describe('capture gate', () => {
       enabled: false,
       consentAck: true,
       detect: { enabled: true, rules: {} },
+      nativeMic: false,
     })
   })
 })

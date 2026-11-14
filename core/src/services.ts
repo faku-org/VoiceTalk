@@ -7,9 +7,13 @@ import {
   type Codemode,
 } from './codemode/index.ts'
 import { loadStorageConfig, openDb, type StorageConfig } from './db/index.ts'
+import { createChatService, type ChatService } from './chat/index.ts'
 import { Ingester } from './ingest/index.ts'
+import { liveChat } from './call/live.ts'
 import {
+  createChatProvider,
   loadLlmConfig,
+  normalizeBaseUrl,
   OpenAiCompatChat,
   type ChatProvider,
 } from './llm/index.ts'
@@ -35,6 +39,7 @@ export interface Services {
   ingester: Ingester
   codemode: Codemode
   notes: NotesService
+  chat: ChatService
   close(): void
 }
 
@@ -45,6 +50,8 @@ export function createServices(
     db?: Database
     /** Decision/summary model. Defaults to the local llama-server; never the cloud brain. */
     llm?: ChatProvider | null
+    /** Brain of the chat tab. Defaults to the one the call uses (`loadLlmConfig` + `createChatProvider`). */
+    chatLlm?: ChatProvider | null
   } = {},
 ): Services {
   const db = overrides.db ?? openDb(config.dataDir)
@@ -57,17 +64,31 @@ export function createServices(
   const retriever = createRetriever({ db, store, embedder })
   const ingester = new Ingester({ db, store, embedder, allowlist })
   const llmConfig = loadLlmConfig()
+  // Local decision model; follows prefs.llmUrl (falls back to env when prefs are unreadable). Cached per URL.
+  let decisionUrl: string | null = null
+  let decision: ChatProvider | null = null
+  const liveDecisionLlm = (): ChatProvider =>
+    liveChat(() => {
+      let url = llmConfig.llmUrl
+      try {
+        url = normalizeBaseUrl(getPrefsStore().get().llmUrl)
+      } catch {
+        // keep the env URL
+      }
+      if (decision === null || url !== decisionUrl) {
+        decision = new OpenAiCompatChat({
+          baseUrl: url,
+          model: llmConfig.llmModel,
+          temperature: 0,
+        })
+        decisionUrl = url
+      }
+      return decision
+    })
   const notes = createNotesService({
     db,
     embedder,
-    llm:
-      overrides.llm === undefined
-        ? new OpenAiCompatChat({
-            baseUrl: llmConfig.llmUrl,
-            model: llmConfig.llmModel,
-            temperature: 0,
-          })
-        : overrides.llm,
+    llm: overrides.llm === undefined ? liveDecisionLlm() : overrides.llm,
     prefs: () => {
       const p = getPrefsStore().get()
       return {
@@ -75,6 +96,14 @@ export function createServices(
         location: p.location.manual,
       }
     },
+  })
+  const chat = createChatService({
+    db,
+    notes,
+    llm:
+      overrides.chatLlm === undefined
+        ? createChatProvider(llmConfig)
+        : overrides.chatLlm,
   })
   const codemode = createCodemode({
     ctx: { allowlist, retriever, notes: notes.search },
@@ -89,6 +118,7 @@ export function createServices(
     ingester,
     codemode,
     notes,
+    chat,
     close() {
       ingester.stop()
       db.close()

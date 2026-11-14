@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Scale } from 'lucide-react'
+import { Mic, Scale } from 'lucide-react'
 import { Field, SectionTitle, Switch, inputClass } from '@/app/ui'
 import type { DetectRule, DetectRuleEntry } from '@/app/prefsTypes'
 import { PLATFORMS, ruleFor, withRule } from '@/features/capture/protocol'
@@ -16,11 +16,17 @@ export function CaptureArea() {
   const [rules, setRules] = useState<DetectRuleEntry[]>(
     prefs.capture.detect.rules,
   )
+  const [nativeMic, setNativeMic] = useState(prefs.capture.nativeMic)
 
   // Turning capture on without reading the notice is the one thing the form refuses.
   const issues = collect([['consent', validateCaptureConsent(enabled, ack)]])
   const { save, state, shownIssues, dirty } = useAreaSave(issues, () => ({
-    capture: { enabled, consentAck: ack, detect: { enabled: detect, rules } },
+    capture: {
+      enabled,
+      consentAck: ack,
+      detect: { enabled: detect, rules },
+      nativeMic,
+    },
   }))
 
   return (
@@ -144,6 +150,32 @@ export function CaptureArea() {
           ))}
         </fieldset>
       )}
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p
+            id="capture-native-mic-label"
+            className="flex items-center gap-2 text-body-lg font-medium"
+          >
+            <Mic className="size-4" aria-hidden="true" />
+            Micrófono con cancelación de eco
+          </p>
+          <p className="mt-1 text-meta text-muted">
+            En las llamadas con VoiceTalk, usa el micrófono nativo y resta el
+            audio que suena en tus altavoces, además de reducir el ruido de
+            fondo. Si no se puede abrir, la llamada usa el micrófono del
+            navegador como antes.
+          </p>
+        </div>
+        <Switch
+          checked={nativeMic}
+          labelledBy="capture-native-mic-label"
+          onChange={(next) => {
+            setNativeMic(next)
+            dirty()
+          }}
+        />
+      </div>
 
       <SaveBar issues={shownIssues} state={state} onSave={() => void save()} />
     </form>

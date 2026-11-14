@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { PcmPlayer, startMic, type MicHandle } from '@/audio'
+import { inTauri } from '@/app/coreClient'
 import {
   parseServerEvent,
   upsertEntry,
@@ -10,10 +13,15 @@ import {
 
 export type CallPhase = 'idle' | 'connecting' | 'active'
 
+/** Live voice levels, linear RMS 0..1, sampled per frame by the orb. */
+export interface CallLevels {
+  mic: () => number
+  playback: () => number
+}
+
 export interface CallView {
   phase: CallPhase
   agentState: CallState
-  level: number
   transcript: TranscriptEntry[]
   latency: { turn: number; latency: TurnLatency } | null
   error: string | null
@@ -22,7 +30,6 @@ export interface CallView {
 const INITIAL: CallView = {
   phase: 'idle',
   agentState: 'idle',
-  level: 0,
   transcript: [],
   latency: null,
   error: null,
@@ -31,21 +38,38 @@ const INITIAL: CallView = {
 interface Live {
   ws: WebSocket
   mic: MicHandle | null
+  /** The Rust mic (ADR 0014) is feeding this call through `/call/mic`. */
+  native: boolean
+  unlisten: UnlistenFn | null
   player: PcmPlayer
   closing: boolean
 }
 
-// One call = one WebSocket to core (/call), the mic worklet feeding it and the player draining it.
-export function useCall(corePort: number | null) {
+const stopNativeMic = () => {
+  void invoke('native_mic_stop').catch(() => {})
+}
+
+// One call = one WebSocket to core (/call), the mic feeding it (webview worklet, or the native AEC mic when the
+// preference is on and Tauri is there) and the player draining it.
+export function useCall(corePort: number | null, nativeMic = false) {
   const [view, setView] = useState<CallView>(INITIAL)
   const live = useRef<Live | null>(null)
+  // Voice levels change ~50 times a second: refs, not state, so the orb reads them each frame.
+  const micLevel = useRef(0)
+  const [levels] = useState<CallLevels>(() => ({
+    mic: () => micLevel.current,
+    playback: () => live.current?.player.level() ?? 0,
+  }))
 
   const teardown = (keepTranscript: boolean, error: string | null) => {
     const current = live.current
     live.current = null
+    micLevel.current = 0
     if (current) {
       current.closing = true
       current.mic?.stop()
+      current.unlisten?.()
+      if (current.native) stopNativeMic()
       void current.player.close()
       try {
         current.ws.close()
@@ -76,10 +100,17 @@ export function useCall(corePort: number | null) {
 
     const ws = new WebSocket(`ws://127.0.0.1:${corePort}/call`)
     ws.binaryType = 'arraybuffer'
-    const current: Live = { ws, mic: null, player, closing: false }
+    const current: Live = {
+      ws,
+      mic: null,
+      native: false,
+      unlisten: null,
+      player,
+      closing: false,
+    }
     live.current = current
 
-    ws.addEventListener('open', () => {
+    const openWebviewMic = () => {
       startMic((frame) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(frame)
       }).then(
@@ -101,6 +132,37 @@ export function useCall(corePort: number | null) {
           )
         },
       )
+    }
+
+    // Native mic first (echo-cancelled in Rust); any failure falls back to the webview mic, which always works.
+    const openNativeMic = async (): Promise<boolean> => {
+      if (!nativeMic || !inTauri()) return false
+      try {
+        await invoke('native_mic_start')
+      } catch {
+        return false
+      }
+      if (current.closing) {
+        stopNativeMic()
+        return true
+      }
+      current.native = true
+      // The native mic can die mid-call (device unplugged, output device changed): keep the call alive on the
+      // webview mic instead of leaving it deaf.
+      current.unlisten = await listen('native-mic://lost', () => {
+        if (current.closing || !current.native) return
+        current.native = false
+        stopNativeMic()
+        openWebviewMic()
+      })
+      return true
+    }
+
+    ws.addEventListener('open', () => {
+      void openNativeMic().then((usedNative) => {
+        if (!usedNative) openWebviewMic()
+        else if (!current.closing) setView((v) => ({ ...v, phase: 'active' }))
+      })
     })
 
     ws.addEventListener('message', (ev: MessageEvent<unknown>) => {
@@ -114,16 +176,21 @@ export function useCall(corePort: number | null) {
       switch (event.type) {
         case 'stop_playback':
           player.flush()
+          // Barge-in: the orb leaves `speaking` now, not when the next state event arrives.
+          setView((v) =>
+            v.agentState === 'speaking' ? { ...v, agentState: 'listening' } : v,
+          )
           break
         case 'state':
-          setView((v) => ({
-            ...v,
-            agentState: event.state,
-            level: event.state === 'idle' ? 0 : v.level,
-          }))
+          if (event.state === 'idle') micLevel.current = 0
+          setView((v) =>
+            v.agentState === event.state
+              ? v
+              : { ...v, agentState: event.state },
+          )
           break
         case 'level':
-          setView((v) => ({ ...v, level: event.rms }))
+          micLevel.current = event.rms
           break
         case 'transcript':
           setView((v) => ({
@@ -164,6 +231,8 @@ export function useCall(corePort: number | null) {
       if (current) {
         current.closing = true
         current.mic?.stop()
+        current.unlisten?.()
+        if (current.native) stopNativeMic()
         void current.player.close()
         current.ws.close()
       }
@@ -171,5 +240,5 @@ export function useCall(corePort: number | null) {
     [],
   )
 
-  return { view, start, stop }
+  return { view, levels, start, stop }
 }

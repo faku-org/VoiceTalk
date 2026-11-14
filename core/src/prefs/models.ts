@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_STT, type SttModelId } from './schema.ts'
 
 // Models the app needs on disk. Both live in the Hugging Face cache layout
 // (`models--<org>--<repo>/snapshots/<rev>/<file>`), which is where the voice
@@ -17,24 +18,46 @@ export interface ModelSpec {
   command: string | null
 }
 
-export const MODELS: readonly ModelSpec[] = [
-  {
+/** The STT entry follows the selected model (mirrors the voice sidecar catalog). */
+export const STT_SPECS: Record<SttModelId, ModelSpec> = {
+  phonon: {
     id: 'stt',
-    name: 'Reconocimiento de voz (Fluid Speech Pro)',
+    name: 'Reconocimiento de voz (Phonon-2.5, 156 MB, CPU)',
+    repo: 'FermionResearch/Phonon-2.5',
+    file: null,
+    install: 'automatic',
+    command: null,
+  },
+  canary: {
+    id: 'stt',
+    name: 'Reconocimiento de voz (Canary 180M Flash int8, CPU)',
+    repo: 'csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8',
+    file: null,
+    install: 'automatic',
+    command: null,
+  },
+  fluid: {
+    id: 'stt',
+    name: 'Reconocimiento de voz (Fluid Speech Pro, GPU)',
     repo: 'FluidVoice-Labs/fluid-speech-pro',
     file: null,
     install: 'automatic',
     command: null,
   },
-  {
-    id: 'lfm',
-    name: 'Modelo de decisiones (LFM3 1.7B, GGUF)',
-    repo: 'LiquidAI/LFM3-1.7B-GGUF',
-    file: 'LFM3-1.7B-Q4_K_M.gguf',
-    install: 'manual',
-    command: 'hf download LiquidAI/LFM3-1.7B-GGUF LFM3-1.7B-Q4_K_M.gguf',
-  },
-]
+}
+
+const LFM_SPEC: ModelSpec = {
+  id: 'lfm',
+  name: 'Modelo de decisiones (LFM3 1.7B, GGUF)',
+  repo: 'LiquidAI/LFM3-1.7B-GGUF',
+  file: 'LFM3-1.7B-Q4_K_M.gguf',
+  install: 'manual',
+  command: 'hf download LiquidAI/LFM3-1.7B-GGUF LFM3-1.7B-Q4_K_M.gguf',
+}
+
+export function modelSpecs(stt: SttModelId = DEFAULT_STT): ModelSpec[] {
+  return [STT_SPECS[stt], LFM_SPEC]
+}
 
 export interface ModelStatus {
   id: ModelSpec['id']
@@ -73,8 +96,11 @@ export function isPresent(spec: ModelSpec, hubDir: string): boolean {
   }
 }
 
-export function modelStatuses(hubDir: string = resolveHubDir()): ModelStatus[] {
-  return MODELS.map((spec) => ({
+export function modelStatuses(
+  hubDir: string = resolveHubDir(),
+  stt: SttModelId = DEFAULT_STT,
+): ModelStatus[] {
+  return modelSpecs(stt).map((spec) => ({
     id: spec.id,
     name: spec.name,
     repo: spec.repo,
@@ -83,3 +109,6 @@ export function modelStatuses(hubDir: string = resolveHubDir()): ModelStatus[] {
     command: spec.command,
   }))
 }
+
+/** Specs for the default STT selection. */
+export const MODELS: readonly ModelSpec[] = modelSpecs()
