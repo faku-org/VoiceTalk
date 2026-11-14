@@ -18,7 +18,7 @@ flow, persistent preferences, light/dark theming and over-the-air updates. Phase
   `OnboardingFlow` until `onboarding` is complete, else `AppShell`.
 - `AppShell`: sidebar with Llamada, Sesiones, Preferencias. Llamada renders `CallScreen` from `src/features/call` when
   that folder exists (`import.meta.glob`, so the build does not break without it) and a placeholder otherwise. Sesiones
-  is a placeholder until Phase 3.
+  renders `SessionsScreen` from `src/features/sessions` (Phase 3, ADR 0008).
 - Onboarding steps: welcome, microphone (permission + live level meter), allowlisted folders (Tauri dialog), model
   status, Faku voice enrolment (placeholder), theme. Pure state logic lives in `onboarding.ts` and is unit-tested.
   Completion is stored as `{ version, completedAt }`; raising `ONBOARDING_VERSION` shows the flow again.

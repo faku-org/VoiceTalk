@@ -45,7 +45,7 @@ the embedding call to a local server.
 - `@wefaber/codemode` registry + `@wefaber/codemode-sandbox-quickjs`. Agent JavaScript runs in QuickJS in a
   terminable Worker: no network, no process, no `require`, no `Bun`.
 - Scope `voicetalk:read` only. Ops: `fs.list`, `fs.read`, `fs.stat`, `search.text`, `docs.query(q)`,
-  `notes.query(q)` (stub returning `[]` until Phase 3). No write ops exist, so there is nothing to disable.
+  `notes.query(q)` (implemented in Phase 3, see ADR 0008). No write ops exist, so there is nothing to disable.
 - Allowlist (`allowlist.ts`): lexical rejection of empty paths, NUL, UNC and device paths (`\\server`, `\\?\`,
   `\\.\`), drive-relative (`C:x`), alternate data streams, and any `..` segment; then `realpath` and containment
   against the realpath of each root (separator-aware, so `root-evil` does not match `root`). Symlinks and junctions

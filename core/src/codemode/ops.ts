@@ -3,6 +3,7 @@ import { createRegistry, defineOp, OpError } from '@wefaber/codemode'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { INGEST_EXTENSIONS } from '../ingest/index.ts'
+import type { NoteSearch } from '../notes/search.ts'
 import type { Retriever } from '../rag/index.ts'
 import type { Allowlist } from './allowlist.ts'
 
@@ -10,6 +11,7 @@ import type { Allowlist } from './allowlist.ts'
 export interface CodemodeCtx {
   allowlist: Allowlist
   retriever: Retriever
+  notes: NoteSearch
 }
 
 export const PRODUCT = 'voicetalk'
@@ -301,17 +303,31 @@ const notesQuery = defineOp({
   id: 'voicetalk.notes.query',
   scope: 'voicetalk:read',
   summary:
-    'Search the internal and external notes. Empty until notes land (Phase 3).',
+    'Search the internal notes (facts the agent kept about the user) and the external notes (summaries of past conversations). Semantic, with a word-match fallback.',
   verbException: 'Semantic retrieval over notes (notes.query); read-only',
-  input: Type.Object({ q: Type.String({ minLength: 1, maxLength: 1000 }) }),
+  input: Type.Object({
+    q: Type.String({ minLength: 1, maxLength: 1000 }),
+    k: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
+  }),
   output: Type.Array(
     Type.Object({
       id: Type.String(),
+      kind: Type.Union([Type.Literal('internal'), Type.Literal('external')]),
       text: Type.String(),
       score: Type.Number(),
+      at: Type.Number(),
     }),
   ),
-  handler: () => [],
+  handler: async (ctx: CodemodeCtx, input) => {
+    const hits = await ctx.notes.search(input.q, input.k ?? 5)
+    return hits.map((h) => ({
+      id: h.id,
+      kind: h.kind,
+      text: h.text,
+      score: h.score,
+      at: h.createdAt,
+    }))
+  },
 })
 
 export const registry = createRegistry<CodemodeCtx>({

@@ -23,6 +23,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0005: Turn-based call loop](adr/0005-call-loop.md): `WS /call`, LLM brain, barge-in, latency breakdown.
 - [0006: Storage, ingest/RAG and read-only Code Mode](adr/0006-storage-ingest-codemode.md)
 - [0007: App shell, preferences in core, OTA updates](adr/0007-app-shell-and-updates.md)
+- [0008: Sessions, decision model and notes](adr/0008-notes.md)
 
 ## Spikes
 
