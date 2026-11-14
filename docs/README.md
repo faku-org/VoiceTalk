@@ -4,12 +4,15 @@ Voice companion desktop app (Tauri): voice chat with a cloud TTS and local STT, 
 
 ## Layout
 
-- `src-tauri/`: Tauri v2 shell. Spawns and health-checks the two sidecars, kills them on exit.
+- `src-tauri/`: Tauri v2 shell. Spawns and health-checks the two sidecars, kills them on exit. Updater, dialog and process plugins. Icons in `src-tauri/icons/`.
+- `.github/workflows/`: `checks.yml` and `format.yml` on PRs, `release.yml` on `v*` tags.
 - `src/`: React webview: app shell, onboarding, preferences (`src/app`, `src/features/*`), call screen in `src/features/call`, mic and playback in `src/audio`.
-- `core/`: Bun sidecar (Elysia + GraphQL Yoga/Pothos). Holds the Cartesia key and streams TTS.
+- `core/`: Bun sidecar (Elysia + GraphQL Yoga/Pothos). Call loop over `WS /call`, LLM brain, Cartesia TTS, SQLite storage, folder ingest/RAG, read-only Code Mode, preferences.
 - `voice/`: Python sidecar (uv, FastAPI). Silero VAD + Fluid Speech Pro STT over `WS /stt`, glossary post-correction.
 
 Dev: `bun run tauri:dev`. Each sidecar also runs alone: `bun core/src/index.ts`, `uv run --project voice voicetalk-voice --port <N>`.
+
+Setup, environment variables, icons, signing key, GitHub secrets and releases: [root README](../README.md). Voice sidecar protocol: [voice/README.md](../voice/README.md).
 
 ## ADRs
 
