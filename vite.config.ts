@@ -17,6 +17,9 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,
+    // Loopback only; Tauri's devUrl points here (see src-tauri/tauri.conf.json).
+    host: '127.0.0.1',
+    port: 1420,
+    strictPort: true,
   },
 })
