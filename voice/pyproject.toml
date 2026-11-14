@@ -1,6 +1,6 @@
 [project]
 name = "voicetalk-voice"
-version = "0.14.0"
+version = "0.17.0"
 description = "VoiceTalk voice sidecar: local STT (Fluid Speech Pro) + Silero VAD over WebSocket"
 requires-python = ">=3.12,<3.13"
 dependencies = [

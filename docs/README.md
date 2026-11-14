@@ -14,6 +14,10 @@ Dev: `bun run tauri:dev`. Each sidecar also runs alone: `bun core/src/index.ts`,
 
 Setup, environment variables, icons, signing key, GitHub secrets and releases: [root README](../README.md). Voice sidecar protocol: [voice/README.md](../voice/README.md).
 
+## Design
+
+- [DESIGN.md](../DESIGN.md): design system (tokens, type, layout, Ether, privacy, component catalog, design decisions). Tokens in `src/index.css` + `src/styles/tokens.css`; fonts bundled via `@fontsource`.
+
 ## ADRs
 
 - [0001: Processes and sidecars](adr/0001-processes-and-sidecars.md)
