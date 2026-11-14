@@ -1,6 +1,7 @@
 import type { CallEvents, TranscriptEntry } from '../call/events.ts'
 import type { ChatProvider } from '../llm/index.ts'
 import type { Embedder } from '../rag/index.ts'
+import { CALL_SOURCE } from '../capture/platforms.ts'
 import { decide, type Line } from './decision.ts'
 import type {
   NoteRepo,
@@ -53,6 +54,7 @@ interface ActiveCall {
   id: string
   startedAt: number
   location: string
+  /** 'call' or the platform key of a captured call. */
   source: string
   /** Transcript kept in memory for the model; the database copy is the durable one. */
   lines: Line[]
@@ -144,15 +146,10 @@ export class NotesRecorder {
     return p
   }
 
-  #onStarted(callId: string, t: number, source: string = 'call'): void {
+  #onStarted(callId: string, t: number, source: string = CALL_SOURCE): void {
     try {
       const location = this.#prefs.location
-      this.#d.sessions.create({
-        id: callId,
-        startedAt: t,
-        location,
-        source,
-      })
+      this.#d.sessions.create({ id: callId, startedAt: t, location, source })
       const call: ActiveCall = {
         id: callId,
         startedAt: t,
@@ -184,15 +181,22 @@ export class NotesRecorder {
         id: entry.id,
         sessionId: callId,
         speaker: entry.speaker,
+        label: entry.speaker === 'remote' ? (entry.label ?? null) : null,
         tStart: entry.t,
-        tEnd: this.#now(),
+        tEnd: entry.tEnd ?? this.#now(),
         text,
-        source: entry.speaker === 'agent' ? 'agent' : 'stt',
+        source:
+          entry.speaker === 'agent'
+            ? 'agent'
+            : entry.speaker === 'remote'
+              ? 'capture'
+              : 'stt',
         speakerName: entry.speakerName ?? null,
       })
       call.lines.push({
         speaker: entry.speaker,
         text,
+        label: entry.label ?? null,
         ...(entry.speakerName ? { name: entry.speakerName } : {}),
       })
     } catch (err) {
@@ -224,14 +228,19 @@ export class NotesRecorder {
       const lines: Line[] = utterances.list(call.id).map((u) => ({
         speaker: u.speaker,
         text: u.text,
+        label: u.label,
         ...(u.speakerName ? { name: u.speakerName } : {}),
       }))
-      const draft = await summarize(online ? this.#d.llm : null, lines)
+      const draft = await summarize(
+        online ? this.#d.llm : null,
+        lines,
+        call.source,
+      )
       this.#d.summaries.save({ sessionId: call.id, ...draft })
       this.#d.sessions.setTitle(call.id, sessionTitle(lines, call.startedAt))
-      const speakers: SpeakerId[] = (['user', 'agent'] as const).filter((s) =>
-        lines.some((l) => l.speaker === s),
-      )
+      const speakers: SpeakerId[] = (
+        ['user', 'agent', 'remote'] as const
+      ).filter((s) => lines.some((l) => l.speaker === s))
       await this.#addNote({
         sessionId: call.id,
         kind: 'external',
@@ -240,6 +249,7 @@ export class NotesRecorder {
           startedAt: call.startedAt,
           location: call.location,
           speakers,
+          source: call.source,
           names: speakerNames(lines),
         }),
         location: call.location,
@@ -262,6 +272,8 @@ export class NotesRecorder {
   /** One decision over the transcript since the last one. Errors are logged, never thrown. */
   async #decide(call: ActiveCall): Promise<void> {
     const llm = this.#d.llm
+    // Captured calls (ADR 0009) feed no private memory: other people's words never become internal notes.
+    if (call.source !== CALL_SOURCE) return
     const fresh = call.lines.slice(call.cursor)
     if (!llm || !fresh.some((l) => l.speaker === 'user')) return
     call.cursor = call.lines.length

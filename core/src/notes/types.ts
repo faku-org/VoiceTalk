@@ -1,6 +1,6 @@
 export type SessionStatus = 'active' | 'ended' | 'interrupted'
 export type NoteKind = 'internal' | 'external'
-export type SpeakerId = 'user' | 'agent'
+export type SpeakerId = 'user' | 'agent' | 'remote'
 
 export interface Session {
   id: string
@@ -9,7 +9,7 @@ export interface Session {
   location: string
   title: string | null
   status: SessionStatus
-  /** Where the session came from: call (the app's own mic), discord, ... (ADR 0010). */
+  /** 'call' for a voice call, 'discord' for a Discord channel (ADR 0010), or the platform key of a captured call (ADR 0009). */
   source: string
 }
 
@@ -17,10 +17,12 @@ export interface UtteranceRow {
   id: string
   sessionId: string
   speaker: SpeakerId
+  /** Display name of a remote speaker; null for user and agent. */
+  label?: string | null
   tStart: number
   tEnd: number
   text: string
-  source: 'stt' | 'agent'
+  source: 'stt' | 'agent' | 'capture'
   /** Real name of the speaker in a multi-speaker session (Discord display name). */
   speakerName?: string | null
 }

@@ -14,6 +14,7 @@ export function registerNotes(builder: Builder): void {
       fields: (t) => ({
         id: t.exposeString('id'),
         speaker: t.exposeString('speaker'),
+        label: t.string({ nullable: true, resolve: (u) => u.label }),
         text: t.exposeString('text'),
         // Real name of the speaker (Discord display name); null for the mic call.
         speakerName: t.string({
@@ -51,7 +52,6 @@ export function registerNotes(builder: Builder): void {
       location: t.exposeString('location'),
       title: t.string({ nullable: true, resolve: (s) => s.title }),
       status: t.exposeString('status'),
-      // 'call' (mic) or 'discord'.
       source: t.exposeString('source'),
       utteranceCount: t.int({
         resolve: (s, _a, ctx) => ctx.services().notes.utterances.count(s.id),

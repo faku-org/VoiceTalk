@@ -66,6 +66,7 @@ Every variable is optional except `CARTESIA_API_KEY`, which speech output needs.
 | `VT_DATA_DIR`                     | core              | SQLite and index. Default `core/.data` (gitignored).                                              |
 | `VT_INGEST`                       | core              | `off` skips the folder watcher.                                                                   |
 | `VT_NOTES`                        | core              | `off` stops recording calls and the notes decision model.                                         |
+| `VT_CAPTURE`                      | core              | `off` refuses call capture (also off by default in Preferencias).                                 |
 | `VT_GLOSSARY`                     | voice             | Glossary TOML, default `voice/glossary.toml`.                                                     |
 | `DISCORD_BOT_TOKEN`               | core              | Discord bot token. Without it the Discord feature is hidden. Never sent to the webview.           |
 | `DISCORD_APP_ID`                  | core              | Application id; builds the invite link shown in the Discord view.                                 |

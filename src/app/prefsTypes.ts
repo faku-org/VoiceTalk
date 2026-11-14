@@ -15,6 +15,8 @@ export interface Preferences {
   thresholds: Thresholds
   folders: string[]
   location: { manual: string; ipGeolocation: boolean }
+  /** Call capture (ADR 0009): off by default; `consentAck` = the notice was confirmed. */
+  capture: { enabled: boolean; consentAck: boolean }
   theme: ThemePreference
   onboarding: { version: number; completedAt: string } | null
 }
@@ -27,6 +29,7 @@ export interface PreferencesPatch {
   thresholds?: Partial<Thresholds>
   folders?: string[]
   location?: Partial<Preferences['location']>
+  capture?: Partial<Preferences['capture']>
   theme?: ThemePreference
   onboarding?: { version: number; completedAt: string } | null
 }
@@ -50,5 +53,6 @@ export const PREFS_FIELDS = `
   brain llmUrl voiceId folders theme
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }
+  capture { enabled consentAck }
   onboarding { version completedAt }
 `

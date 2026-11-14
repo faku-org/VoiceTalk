@@ -9,16 +9,34 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 export const statusLabel = (status: string): string =>
   STATUS_LABEL[status as SessionStatus] ?? status
 
-/** Real name when the capture knew it (Discord), else the generic label. */
-export const speakerLabel = (speaker: string, name?: string | null): string => {
-  const n = name?.trim()
+/**
+ * Who spoke: the real name when the session knew it (Discord bot), else the remote side's `label` (the
+ * platform of a captured call), else the generic label.
+ */
+export const speakerLabel = (
+  speaker: string,
+  name?: string | null,
+  label?: string | null,
+): string => {
+  const n = name?.trim() || label?.trim()
   if (n) return n
-  return speaker === 'agent' ? 'Agente' : 'Tú'
+  if (speaker === 'agent') return 'Agente'
+  return speaker === 'remote' ? 'Interlocutor' : 'Tú'
 }
 
-/** Where a session was captured. `call` (the microphone) is the default and needs no badge. */
+const SOURCE_LABEL: Record<string, string> = {
+  discord: 'Discord',
+  teams: 'Microsoft Teams',
+  zoom: 'Zoom',
+  slack: 'Slack',
+  whatsapp: 'WhatsApp',
+  meet: 'Google Meet',
+  other: 'Otra aplicación',
+}
+
+/** Platform of a captured or Discord session ("Discord"); null for a plain VoiceTalk call. */
 export const sourceLabel = (source: string | undefined): string | null =>
-  source === 'discord' ? 'Discord' : null
+  !source || source === 'call' ? null : (SOURCE_LABEL[source] ?? source)
 
 /** "14 nov 2026, 18:30" in the user's locale (Spanish). `timeZone` exists for tests. */
 export function formatStarted(ms: number, timeZone?: string): string {

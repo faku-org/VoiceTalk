@@ -134,10 +134,11 @@ interface UtteranceDbRow {
   id: string
   session_id: string
   speaker: SpeakerId
+  label: string | null
   t_start: number
   t_end: number
   text: string
-  source: 'stt' | 'agent'
+  source: 'stt' | 'agent' | 'capture'
   speaker_name: string | null
 }
 
@@ -146,13 +147,14 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
 
   add(u: UtteranceRow): void {
     this.db.run(
-      `INSERT INTO utterances (id, session_id, speaker, t_start, t_end, text, source, speaker_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO utterances (id, session_id, speaker, label, t_start, t_end, text, source, speaker_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET text = excluded.text, t_end = excluded.t_end`,
       [
         u.id,
         u.sessionId,
         u.speaker,
+        u.label ?? null,
         u.tStart,
         u.tEnd,
         u.text,
@@ -172,6 +174,7 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
         id: r.id,
         sessionId: r.session_id,
         speaker: r.speaker,
+        label: r.label,
         tStart: r.t_start,
         tEnd: r.t_end,
         text: r.text,
@@ -220,7 +223,7 @@ const toNote = (r: NoteDbRow): Note => ({
   createdAt: r.created_at,
   location: r.location,
   speakers: parseJsonList(r.speakers).filter(
-    (s): s is SpeakerId => s === 'user' || s === 'agent',
+    (s): s is SpeakerId => s === 'user' || s === 'agent' || s === 'remote',
   ),
   embedding: r.embedding ? fromBlob(r.embedding) : null,
 })

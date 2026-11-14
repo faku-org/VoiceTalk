@@ -36,6 +36,13 @@ const locationShape = z.object({
   ipGeolocation: z.boolean(),
 })
 
+const captureShape = z.object({
+  /** Opt-in: allow listening to calls of other apps (ADR 0009). Off by default. */
+  enabled: z.boolean(),
+  /** The user confirmed the notice that recording others may need their consent. */
+  consentAck: z.boolean(),
+})
+
 const onboardingShape = z.object({
   version: z.number().int().min(1),
   completedAt: z.iso.datetime(),
@@ -51,6 +58,7 @@ const shape = z.object({
     .max(50)
     .transform((list) => [...new Set(list)]),
   location: locationShape,
+  capture: captureShape,
   theme: z.enum(['system', 'light', 'dark']),
   onboarding: onboardingShape.nullable(),
 })
@@ -62,6 +70,7 @@ export const patchSchema = shape
   .extend({
     thresholds: thresholdsShape.partial(),
     location: locationShape.partial(),
+    capture: captureShape.partial(),
   })
   .partial()
 export type PreferencesPatch = z.infer<typeof patchSchema>
@@ -73,6 +82,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   thresholds: { respondConfidence: 0.6, vadSensitivity: 0.5, endOfTurnMs: 700 },
   folders: [],
   location: { manual: '', ipGeolocation: false },
+  capture: { enabled: false, consentAck: false },
   theme: 'system',
   onboarding: null,
 }
@@ -86,11 +96,12 @@ export function mergePreferences(
     Object.fromEntries(
       Object.entries(value).filter(([, v]) => v !== undefined),
     ) as Partial<T>
-  const { thresholds, location, ...rest } = patch
+  const { thresholds, location, capture, ...rest } = patch
   return {
     ...base,
     ...defined(rest),
     thresholds: { ...base.thresholds, ...defined(thresholds ?? {}) },
     location: { ...base.location, ...defined(location ?? {}) },
+    capture: { ...base.capture, ...defined(capture ?? {}) },
   }
 }

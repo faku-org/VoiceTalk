@@ -43,6 +43,15 @@ describe('sessions format', () => {
     expect(sourceLabel(undefined)).toBeNull()
   })
 
+  test('captured calls: remote label and platform', () => {
+    expect(speakerLabel('remote', 'Discord')).toBe('Discord')
+    expect(speakerLabel('remote', '  ')).toBe('Interlocutor')
+    expect(speakerLabel('user', null)).toBe('Tú')
+    expect(sourceLabel('call')).toBeNull()
+    expect(sourceLabel('teams')).toBe('Microsoft Teams')
+    expect(sourceLabel('legacy')).toBe('legacy')
+  })
+
   test('date and title', () => {
     expect(formatStarted(Date.UTC(2026, 10, 14, 18, 30), 'UTC')).toMatch(
       /14.*nov.*2026.*18:30/,

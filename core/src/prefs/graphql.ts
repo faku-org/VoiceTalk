@@ -35,6 +35,14 @@ export function registerPrefs(builder: AnyBuilder): void {
         ipGeolocation: t.exposeBoolean('ipGeolocation'),
       }),
     })
+  const Capture = builder
+    .objectRef<Preferences['capture']>('CapturePreference')
+    .implement({
+      fields: (t) => ({
+        enabled: t.exposeBoolean('enabled'),
+        consentAck: t.exposeBoolean('consentAck'),
+      }),
+    })
   const Onboarding = builder
     .objectRef<NonNullable<Preferences['onboarding']>>('OnboardingRecord')
     .implement({
@@ -56,6 +64,10 @@ export function registerPrefs(builder: AnyBuilder): void {
       location: t.field({
         type: Location,
         resolve: (p: Preferences) => p.location,
+      }),
+      capture: t.field({
+        type: Capture,
+        resolve: (p: Preferences) => p.capture,
       }),
       theme: t.field({ type: Theme, resolve: (p: Preferences) => p.theme }),
       onboarding: t.field({
@@ -104,6 +116,12 @@ export function registerPrefs(builder: AnyBuilder): void {
       ipGeolocation: t.boolean(),
     }),
   })
+  const CaptureInput = builder.inputType('CapturePreferenceInput', {
+    fields: (t) => ({
+      enabled: t.boolean(),
+      consentAck: t.boolean(),
+    }),
+  })
   const OnboardingInput = builder.inputType('OnboardingRecordInput', {
     fields: (t) => ({
       version: t.int({ required: true }),
@@ -118,6 +136,7 @@ export function registerPrefs(builder: AnyBuilder): void {
       thresholds: t.field({ type: ThresholdsInput }),
       folders: t.stringList(),
       location: t.field({ type: LocationInput }),
+      capture: t.field({ type: CaptureInput }),
       theme: t.field({ type: Theme }),
       onboarding: t.field({ type: OnboardingInput }),
     }),

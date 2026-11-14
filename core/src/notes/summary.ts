@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ChatMessage, ChatProvider } from '../llm/index.ts'
 import { complete, formatLines, jsonObjects, type Line } from './decision.ts'
+import { CALL_SOURCE, platformLabel } from '../capture/platforms.ts'
 import type { SpeakerId, Summary } from './types.ts'
 
 const list = z.array(z.string().trim().min(1).max(300)).max(8)
@@ -27,6 +28,20 @@ Agente: Es normal. ¿Quieres repasar las preguntas?
 Usuario: Sí, pero antes dime cómo respirar para calmarme.
 {"summary":"El usuario habló de su entrevista de mañana y de sus nervios. Pidió una técnica de respiración.","open_questions":["Repasar las preguntas de la entrevista."],"raised":["Entrevista de trabajo","Nervios"]}`
 
+/** Same contract as SUMMARY_PROMPT, for a call captured from another app (ADR 0009): no agent, other people. */
+export const CAPTURE_SUMMARY_PROMPT = `Eres el modelo que resume llamadas de VoiceTalk. Recibes la transcripción de una llamada que el usuario tuvo en otra aplicación. "Usuario" es quien usa VoiceTalk; el resto de las voces llega mezclado en un solo canal con el nombre de la aplicación, así que no distingas personas ni inventes quién dijo qué.
+Escribe en español neutro, con tono sencillo y sin juzgar. Usa "tú" si necesitas dirigirte a alguien; nunca uses voseo.
+Responde solo con un JSON con estas claves:
+- "summary": dos o tres frases sobre de qué se habló y qué se acordó.
+- "open_questions": lista de pendientes, tareas o preguntas sin resolver (puede ser vacía).
+- "raised": lista de temas, personas o asuntos que salieron (puede ser vacía).
+No inventes nada que no esté en la transcripción.
+Ejemplo:
+Usuario: ¿Quedamos el jueves para revisar el presupuesto?
+Zoom: Sí, pero antes necesito los números de ventas.
+Usuario: Te los mando mañana.
+{"summary":"Acordaron revisar el presupuesto el jueves. El usuario enviará mañana los números de ventas.","open_questions":["Confirmar la hora de la reunión del jueves."],"raised":["Presupuesto","Números de ventas"]}`
+
 /** The model sees at most this many characters of transcript (the local context is 8k tokens). */
 export const SUMMARY_MAX_CHARS = 8000
 export const SUMMARY_MAX_TOKENS = 500
@@ -39,9 +54,15 @@ function clip(lines: Line[]): string {
     : `[…]\n${text.slice(text.length - SUMMARY_MAX_CHARS)}`
 }
 
-export function summaryMessages(lines: Line[]): ChatMessage[] {
+export function summaryMessages(
+  lines: Line[],
+  source: string = CALL_SOURCE,
+): ChatMessage[] {
   return [
-    { role: 'system', content: SUMMARY_PROMPT },
+    {
+      role: 'system',
+      content: source === CALL_SOURCE ? SUMMARY_PROMPT : CAPTURE_SUMMARY_PROMPT,
+    },
     { role: 'user', content: clip(lines) },
   ]
 }
@@ -76,10 +97,11 @@ export function fallbackSummary(lines: Line[]): SummaryDraft {
 export async function summarize(
   llm: ChatProvider | null,
   lines: Line[],
+  source: string = CALL_SOURCE,
 ): Promise<SummaryDraft> {
   if (!llm) return fallbackSummary(lines)
   try {
-    const text = await complete(llm, summaryMessages(lines), {
+    const text = await complete(llm, summaryMessages(lines, source), {
       maxTokens: SUMMARY_MAX_TOKENS,
       timeoutMs: SUMMARY_TIMEOUT_MS,
     })
@@ -92,7 +114,11 @@ export async function summarize(
 export const formatDate = (ms: number): string =>
   new Intl.DateTimeFormat('es', { dateStyle: 'long' }).format(new Date(ms))
 
-const WHO: Record<SpeakerId, string> = { user: 'usuario', agent: 'agente' }
+const WHO: Record<SpeakerId, string> = {
+  user: 'usuario',
+  agent: 'agente',
+  remote: 'otros participantes',
+}
 
 const joinNames = (names: string[]): string =>
   names.length < 2
@@ -117,10 +143,13 @@ export function externalNoteBody(input: {
   startedAt: number
   location: string
   speakers: SpeakerId[]
+  /** Session source; a captured call or a Discord session is named after its platform. */
+  source?: string
   /** Real names of a multi-speaker session. Replace the generic usuario and agente. */
   names?: string[]
 }): string {
   const { draft } = input
+  const captured = input.source && input.source !== CALL_SOURCE
   const who = input.names?.length
     ? input.names
     : input.speakers.map((s) => WHO[s])
@@ -131,7 +160,10 @@ export function externalNoteBody(input: {
   ]
     .filter(Boolean)
     .join(' · ')
-  const parts = [`Conversación: ${head}.`, draft.summary]
+  const parts = [
+    `${captured ? `Llamada en ${platformLabel(input.source!)}` : 'Conversación'}: ${head}.`,
+    draft.summary,
+  ]
   if (draft.openQuestions.length)
     parts.push(
       `Quedó pendiente:\n${draft.openQuestions.map((q) => `- ${q}`).join('\n')}`,

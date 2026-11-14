@@ -73,11 +73,12 @@ Per speaker: Opus (48 kHz stereo) -> PCM -> 16 kHz mono (`Downsampler48kStereoTo
 
 ### Sessions
 
-Migration `0003_session_source.sql`: `sessions.source TEXT NOT NULL DEFAULT 'call'` and `utterances.speaker_name`.
-Discord sessions are `source = 'discord'`. A dedicated `CallStore` (not the mic call's) feeds `CallEvents`, so
-`NotesRecorder` produces the transcript, internal notes, summary and the external note unchanged. The external note
+`sessions.source` comes from call capture's migration `0003_capture_sessions.sql` (ADR 0009), which also adds
+`utterances.speaker_name`. Discord sessions are `source = 'discord'`, the same key a Discord call captured through
+WASAPI gets; the UI tells them apart because bot utterances carry `speaker_name`. A dedicated `CallStore` (not the
+mic call's) feeds `CallEvents`, so `NotesRecorder` produces the transcript, summary and the external note. Like
+captured calls, bot sessions skip the decision model: no internal notes about third parties. The external note
 body names the people ("con Ana y Beto"). `Note.speakers` keeps its `user | agent` ids. The mic call stays `call`.
-If the base already has a `source` column when this is rebased (p6), reuse it and drop the first statement.
 
 ### Talking (off by default)
 

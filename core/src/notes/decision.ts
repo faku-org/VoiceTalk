@@ -3,18 +3,26 @@ import type { ChatMessage, ChatProvider } from '../llm/index.ts'
 
 /** One line of transcript, as the decision and summary prompts see it. */
 export interface Line {
-  speaker: 'user' | 'agent'
+  speaker: 'user' | 'agent' | 'remote'
   text: string
+  // Name of a remote speaker (the platform of a captured call).
+  label?: string | null
   /** Real name when the session has several speakers (Discord). Replaces the generic label. */
   name?: string
 }
 
-export const SPEAKER_LABEL = { user: 'Usuario', agent: 'Agente' } as const
+export const SPEAKER_LABEL = {
+  user: 'Usuario',
+  agent: 'Agente',
+  remote: 'Interlocutor',
+} as const
+
+export const lineLabel = (l: Line): string =>
+  l.name ??
+  (l.speaker === 'remote' && l.label ? l.label : SPEAKER_LABEL[l.speaker])
 
 export function formatLines(lines: Line[]): string {
-  return lines
-    .map((l) => `${l.name ?? SPEAKER_LABEL[l.speaker]}: ${l.text}`)
-    .join('\n')
+  return lines.map((l) => `${lineLabel(l)}: ${l.text}`).join('\n')
 }
 
 /**

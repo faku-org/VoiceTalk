@@ -27,7 +27,7 @@ Send binary frames, pcm_s16le mono 16 kHz, any size. Receive JSON:
 - `{"type":"final","text":str,"raw":str,"t_start":sec,"t_end":sec,"stt_ms":int}`
 - `{"type":"error","message":str}`
 
-`text` is after glossary and LLM correction; `raw` is the ASR output. Up to `VT_STT_MAX_CLIENTS` connections at once (default 8; the mic call uses one, a Discord session one per speaker), each with its own VAD state and one shared ASR worker. Beyond that a new connection gets close 1013. Audio is never written to disk.
+`text` is after glossary and LLM correction; `raw` is the ASR output. Up to `VT_STT_MAX_CLIENTS` connections at once (default 8: the mic call uses one, a captured call two (remote and mic), a Discord session one per speaker), each with its own VAD state and one shared ASR worker. Beyond that a new connection gets close 1013. Audio is never written to disk.
 
 ## Glossary
 

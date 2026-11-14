@@ -51,6 +51,16 @@ export function validateLocation(value: string): string | null {
     : null
 }
 
+/** Capture cannot be switched on without confirming the consent notice (mirrors core's gate). */
+export function validateCaptureConsent(
+  enabled: boolean,
+  consentAck: boolean,
+): string | null {
+  return enabled && !consentAck
+    ? 'Confirma que leíste el aviso para activar la captura.'
+    : null
+}
+
 export function collect(entries: Array<[string, string | null]>): Issue[] {
   return entries.flatMap(([field, message]) =>
     message ? [{ field, message }] : [],

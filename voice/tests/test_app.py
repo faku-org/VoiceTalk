@@ -94,23 +94,36 @@ def test_ws_not_ready_sends_error_and_closes() -> None:
                 ws.receive_json()
 
 
-def test_ws_connection_over_the_limit_is_refused() -> None:
-    settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=1)
-    app = create_app(settings, engine=FakeEngine())
+def test_ws_allows_concurrent_connections_up_to_the_limit(wav: Path) -> None:
+    """Call capture opens two links (remote + mic) next to a possible voice call."""
+    app = create_app(_settings(), engine=FakeEngine(text="hola"))
+    pcm = read_pcm(wav)
+    chunk = int(16_000 * 2 * CHUNK_MS / 1000)
     with TestClient(app) as client:
-        with client.websocket_connect("/stt"):
-            with pytest.raises(WebSocketDisconnect) as refused:
-                with client.websocket_connect("/stt") as second:
-                    second.receive_json()
-            assert refused.value.code == 1013
+        with client.websocket_connect("/stt") as a, client.websocket_connect("/stt") as b:
+            # Each connection keeps its own segmenter: both see both bursts.
+            _stream(a, pcm, chunk_bytes=chunk)
+            _stream(b, pcm, chunk_bytes=chunk)
+            for ws in (a, b):
+                events = _collect(ws, 6)
+                assert len([e for e in events if e["type"] == "final"]) == 2
 
 
-def test_ws_accepts_several_clients_up_to_the_limit() -> None:
+def test_ws_connection_over_the_limit_is_refused() -> None:
     settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=2)
     app = create_app(settings, engine=FakeEngine())
     with TestClient(app) as client:
         with client.websocket_connect("/stt"), client.websocket_connect("/stt"):
             with pytest.raises(WebSocketDisconnect) as refused:
-                with client.websocket_connect("/stt") as third:
-                    third.receive_json()
+                with client.websocket_connect("/stt") as extra:
+                    extra.receive_json()
             assert refused.value.code == 1013
+
+
+def test_ws_slot_is_freed_when_a_connection_closes() -> None:
+    settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=1)
+    app = create_app(settings, engine=FakeEngine())
+    with TestClient(app) as client:
+        for _ in range(3):
+            with client.websocket_connect("/stt"):
+                pass
