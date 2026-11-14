@@ -132,6 +132,7 @@ describe('codemode', () => {
       ctx: {
         allowlist: createAllowlist([root]),
         retriever: services.retriever,
+        notes: services.notes.search,
       },
       auditPath: join(s.dir, 'loop.jsonl'),
       limits: { timeoutMs: 300 },

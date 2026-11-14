@@ -9,6 +9,13 @@ import {
 import { loadStorageConfig, openDb, type StorageConfig } from './db/index.ts'
 import { Ingester } from './ingest/index.ts'
 import {
+  loadLlmConfig,
+  OpenAiCompatChat,
+  type ChatProvider,
+} from './llm/index.ts'
+import { createNotesService, type NotesService } from './notes/index.ts'
+import { getPrefsStore } from './prefs/store.ts'
+import {
   BruteForceVectorStore,
   createRetriever,
   GemmaEmbedder,
@@ -18,7 +25,7 @@ import {
   type VectorStore,
 } from './rag/index.ts'
 
-/** Phase 4 services (storage, ingest, retrieval, Code Mode). GraphQL resolvers receive this as context. */
+/** Phase 4 + 3 services (storage, ingest, retrieval, Code Mode, sessions and notes). GraphQL resolvers receive this as context. */
 export interface Services {
   config: StorageConfig
   db: Database
@@ -27,12 +34,18 @@ export interface Services {
   retriever: Retriever
   ingester: Ingester
   codemode: Codemode
+  notes: NotesService
   close(): void
 }
 
 export function createServices(
   config: StorageConfig = loadStorageConfig(),
-  overrides: { embedder?: Embedder; db?: Database } = {},
+  overrides: {
+    embedder?: Embedder
+    db?: Database
+    /** Decision/summary model. Defaults to the local llama-server; never the cloud brain. */
+    llm?: ChatProvider | null
+  } = {},
 ): Services {
   const db = overrides.db ?? openDb(config.dataDir)
   const store = new BruteForceVectorStore()
@@ -43,8 +56,28 @@ export function createServices(
   const allowlist = createAllowlist(config.folders)
   const retriever = createRetriever({ db, store, embedder })
   const ingester = new Ingester({ db, store, embedder, allowlist })
+  const llmConfig = loadLlmConfig()
+  const notes = createNotesService({
+    db,
+    embedder,
+    llm:
+      overrides.llm === undefined
+        ? new OpenAiCompatChat({
+            baseUrl: llmConfig.llmUrl,
+            model: llmConfig.llmModel,
+            temperature: 0,
+          })
+        : overrides.llm,
+    prefs: () => {
+      const p = getPrefsStore().get()
+      return {
+        threshold: p.thresholds.respondConfidence,
+        location: p.location.manual,
+      }
+    },
+  })
   const codemode = createCodemode({
-    ctx: { allowlist, retriever },
+    ctx: { allowlist, retriever, notes: notes.search },
     auditPath: join(config.dataDir, AUDIT_FILE),
   })
   return {
@@ -55,6 +88,7 @@ export function createServices(
     retriever,
     ingester,
     codemode,
+    notes,
     close() {
       ingester.stop()
       db.close()

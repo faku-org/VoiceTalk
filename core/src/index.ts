@@ -15,6 +15,9 @@ const core = createCore(config, services)
 // `VT_INGEST=off` skips the folder watcher (the db and Code Mode stay available).
 if (process.env.VT_INGEST?.trim().toLowerCase() !== 'off')
   services.ingester.start()
+// Persists calls and runs the decision model; `VT_NOTES=off` leaves the call path unrecorded.
+if (process.env.VT_NOTES?.trim().toLowerCase() !== 'off')
+  services.notes.recorder.start()
 const call = createCallSocket(createCallRuntime(config))
 
 // Loopback only: Nginx/Tailscale front it, never the network directly.
@@ -35,8 +38,11 @@ console.log(
 
 const stop = () => {
   server.stop()
-  services.close()
-  process.exit(0)
+  // Let open summaries finish (they are short) before the database closes.
+  void services.notes.recorder.stop().finally(() => {
+    services.close()
+    process.exit(0)
+  })
 }
 process.on('SIGINT', stop)
 process.on('SIGTERM', stop)

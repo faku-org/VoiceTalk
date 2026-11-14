@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { History, Phone, Settings } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PreferencesScreen } from '@/features/preferences/PreferencesScreen'
-import { SessionsPlaceholder } from '@/features/sessions-placeholder/SessionsPlaceholder'
+import { SessionsScreen } from '@/features/sessions/SessionsScreen'
 import { fadeVariants, transition } from '@/lib/motion'
 import { CallSlot } from './callSlot'
 
@@ -20,7 +20,7 @@ function ViewBody({ view }: { view: View }) {
     case 'call':
       return <CallSlot />
     case 'sessions':
-      return <SessionsPlaceholder />
+      return <SessionsScreen />
     case 'preferences':
       return <PreferencesScreen />
   }
