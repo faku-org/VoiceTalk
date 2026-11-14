@@ -27,6 +27,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0009: Call capture](adr/0009-call-capture.md): per-process WASAPI loopback in Rust, `WS /capture`, consent.
 - [0010: Discord voice channels](adr/0010-discord.md): bot library, DAVE, per-user STT, talking gate, transparency.
 - [0011: User-selectable models](adr/0011-model-selection.md): Phonon-2.5 default STT, Canary/Fluid options, prefs applied to the runtime.
+- [0012: Brain presets](adr/0012-brain-presets.md): providers, thinking effort per provider, styles, custom system prompt, `brain` migration.
 
 ## Fixes batches
 

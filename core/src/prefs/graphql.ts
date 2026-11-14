@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql'
+import { EFFORTS, KEY_ENV, PROVIDERS, STYLES } from '../llm/presets.ts'
 import { STT_MODELS, type Preferences } from './schema.ts'
 import { modelStatuses, type ModelStatus } from './models.ts'
 import { PreferencesError, getPrefsStore } from './store.ts'
@@ -11,14 +12,39 @@ import { discordAvailable, loadDiscordConfig } from '../discord/config.ts'
 type AnyBuilder = PothosSchemaTypes.SchemaBuilder<any>
 
 export function registerPrefs(builder: AnyBuilder): void {
-  const Brain = builder.enumType('Brain', {
-    values: ['local', 'claude'] as const,
+  const BrainProvider = builder.enumType('BrainProvider', {
+    values: PROVIDERS,
   })
+  const ThinkingEffort = builder.enumType('ThinkingEffort', {
+    values: EFFORTS,
+  })
+  const BrainStyle = builder.enumType('BrainStyle', { values: STYLES })
   const SttModel = builder.enumType('SttModel', { values: STT_MODELS })
   const Theme = builder.enumType('ThemePreference', {
     values: ['system', 'light', 'dark'] as const,
   })
 
+  const Brain = builder
+    .objectRef<Preferences['brain']>('BrainPreference')
+    .implement({
+      fields: (t) => ({
+        provider: t.field({
+          type: BrainProvider,
+          resolve: (b: Preferences['brain']) => b.provider,
+        }),
+        model: t.exposeString('model'),
+        baseUrl: t.exposeString('baseUrl'),
+        effort: t.field({
+          type: ThinkingEffort,
+          resolve: (b: Preferences['brain']) => b.effort,
+        }),
+        style: t.field({
+          type: BrainStyle,
+          resolve: (b: Preferences['brain']) => b.style,
+        }),
+        systemPrompt: t.exposeString('systemPrompt'),
+      }),
+    })
   const Thresholds = builder
     .objectRef<Preferences['thresholds']>('DecisionThresholds')
     .implement({
@@ -82,13 +108,22 @@ export function registerPrefs(builder: AnyBuilder): void {
 
   // Only booleans: key values never reach GraphQL, let alone the webview.
   const KeyStatus = builder
-    .objectRef<{ cartesia: boolean; anthropic: boolean; discord: boolean }>(
-      'KeyStatus',
-    )
+    .objectRef<{
+      cartesia: boolean
+      anthropic: boolean
+      openai: boolean
+      xai: boolean
+      custom: boolean
+      discord: boolean
+    }>('KeyStatus')
     .implement({
       fields: (t) => ({
         cartesia: t.exposeBoolean('cartesia'),
         anthropic: t.exposeBoolean('anthropic'),
+        openai: t.exposeBoolean('openai'),
+        xai: t.exposeBoolean('xai'),
+        // Optional key of the custom endpoint.
+        custom: t.exposeBoolean('custom'),
         // Bot token set and VT_DISCORD not off.
         discord: t.exposeBoolean('discord'),
       }),
@@ -105,6 +140,16 @@ export function registerPrefs(builder: AnyBuilder): void {
     }),
   })
 
+  const BrainInput = builder.inputType('BrainPreferenceInput', {
+    fields: (t) => ({
+      provider: t.field({ type: BrainProvider }),
+      model: t.string(),
+      baseUrl: t.string(),
+      effort: t.field({ type: ThinkingEffort }),
+      style: t.field({ type: BrainStyle }),
+      systemPrompt: t.string(),
+    }),
+  })
   const ThresholdsInput = builder.inputType('DecisionThresholdsInput', {
     fields: (t) => ({
       respondConfidence: t.float(),
@@ -132,7 +177,7 @@ export function registerPrefs(builder: AnyBuilder): void {
   })
   const PreferencesInput = builder.inputType('PreferencesInput', {
     fields: (t) => ({
-      brain: t.field({ type: Brain }),
+      brain: t.field({ type: BrainInput }),
       llmUrl: t.string(),
       voiceId: t.string(),
       stt: t.field({ type: SttModel }),
@@ -158,7 +203,10 @@ export function registerPrefs(builder: AnyBuilder): void {
       type: KeyStatus,
       resolve: () => ({
         cartesia: Boolean(process.env.CARTESIA_API_KEY?.trim()),
-        anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+        anthropic: Boolean(process.env[KEY_ENV.anthropic]?.trim()),
+        openai: Boolean(process.env[KEY_ENV.openai]?.trim()),
+        xai: Boolean(process.env[KEY_ENV.xai]?.trim()),
+        custom: Boolean(process.env[KEY_ENV.custom]?.trim()),
         discord: discordAvailable(loadDiscordConfig()),
       }),
     }),

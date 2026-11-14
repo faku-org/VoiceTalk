@@ -11,7 +11,7 @@ import {
   type PreferencesPatch,
 } from './prefsTypes'
 
-const LOAD_QUERY = `{ preferences { ${PREFS_FIELDS} } keyStatus { cartesia anthropic discord } }`
+const LOAD_QUERY = `{ preferences { ${PREFS_FIELDS} } keyStatus { cartesia anthropic openai xai custom discord } }`
 const MODELS_QUERY = `{ models { id name repo present install command } }`
 const UPDATE_MUTATION = `mutation ($input: PreferencesInput!) { updatePreferences(input: $input) { ${PREFS_FIELDS} } }`
 
@@ -23,6 +23,7 @@ function mergeLocal(base: Preferences, patch: PreferencesPatch): Preferences {
   return {
     ...base,
     ...stripUndefined(patch),
+    brain: { ...base.brain, ...stripUndefined(patch.brain) },
     thresholds: { ...base.thresholds, ...stripUndefined(patch.thresholds) },
     location: { ...base.location, ...stripUndefined(patch.location) },
   } as Preferences

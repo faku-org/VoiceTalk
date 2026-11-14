@@ -55,30 +55,32 @@ Tauri shell (Rust, React webview)
 
 Every variable is optional except `CARTESIA_API_KEY`, which speech output needs. The full list with comments is in [`.env.example`](.env.example).
 
-| Variable                          | Used by           | Default / meaning                                                                                 |
-| --------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
-| `CARTESIA_API_KEY`                | core              | Cartesia TTS key. Never sent to the webview.                                                      |
-| `ANTHROPIC_API_KEY`               | core              | Only with `VT_BRAIN=claude`.                                                                      |
-| `VT_BRAIN`                        | core              | `local` (llama-server) or `claude` (Haiku).                                                       |
-| `VT_LLM_URL`, `VT_LLM_MODEL`      | core, voice       | `http://127.0.0.1:8080`. In voice, unset disables the LLM post-correction.                        |
-| `VT_EMBED_URL`, `VT_EMBED_MODEL`  | core              | `http://127.0.0.1:8891/v1/embeddings`, `embeddinggemma-2`.                                        |
-| `VT_FOLDERS`                      | core              | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`.                     |
-| `VT_DATA_DIR`                     | core              | SQLite and index. Default `core/.data` (gitignored).                                              |
-| `VT_INGEST`                       | core              | `off` skips the folder watcher.                                                                   |
-| `VT_NOTES`                        | core              | `off` stops recording calls and the notes decision model.                                         |
-| `VT_CAPTURE`                      | core              | `off` refuses call capture (also off by default in Preferencias).                                 |
-| `VT_GLOSSARY`                     | voice             | Glossary TOML, default `voice/glossary.toml`.                                                     |
-| `DISCORD_BOT_TOKEN`               | core              | Discord bot token. Without it the Discord feature is hidden. Never sent to the webview.           |
-| `DISCORD_APP_ID`                  | core              | Application id; builds the invite link shown in the Discord view.                                 |
-| `VT_DISCORD`                      | core              | `off` disables Discord even with a token.                                                         |
-| `VT_DISCORD_NAMES`                | core              | Words that address the agent when talking is on, comma-separated. Default `voicetalk,voice talk`. |
-| `VT_DISCORD_ADDRESS`              | core              | `name` (default) answers only when addressed, `always` answers every utterance.                   |
-| `VT_STT_MAX_CLIENTS`              | voice             | Concurrent STT links. Default 8 (mic call plus one per Discord speaker).                          |
-| `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars          | Set by the Tauri shell. Core default is 4310.                                                     |
-| `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell       | Overrides for the `bun`/`uv` paths and the repo root.                                             |
-| `VT_LLAMA_SERVER`                 | `bun dev --local` | llama-server binary. Default `llama-server` on PATH.                                              |
-| `VT_LLM_GGUF`, `VT_EMBED_GGUF`    | `bun dev --local` | Model files. Default: found in the Hugging Face cache.                                            |
-| `VT_LLAMA_ARGS`                   | `bun dev --local` | Extra llama-server flags. Default `-ngl 99`.                                                      |
+| Variable                          | Used by           | Default / meaning                                                                                                   |
+| --------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `CARTESIA_API_KEY`                | core              | Cartesia TTS key. Never sent to the webview.                                                                        |
+| `ANTHROPIC_API_KEY`               | core              | Claude brain key (Preferencias > Asistente > Cerebro).                                                              |
+| `OPENAI_API_KEY`, `XAI_API_KEY`   | core              | OpenAI and xAI Grok brain keys.                                                                                     |
+| `VT_CUSTOM_LLM_KEY`               | core              | Optional key of the custom OpenAI-compatible brain.                                                                 |
+| `VT_BRAIN`                        | core              | Brain without preferences: `local`, `ollama`, `claude`, `openai`, `xai` or `custom`. Preferences win; see ADR 0012. |
+| `VT_LLM_URL`, `VT_LLM_MODEL`      | core, voice       | `http://127.0.0.1:8080`. In voice, unset disables the LLM post-correction.                                          |
+| `VT_EMBED_URL`, `VT_EMBED_MODEL`  | core              | `http://127.0.0.1:8891/v1/embeddings`, `embeddinggemma-2`.                                                          |
+| `VT_FOLDERS`                      | core              | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`.                                       |
+| `VT_DATA_DIR`                     | core              | SQLite and index. Default `core/.data` (gitignored).                                                                |
+| `VT_INGEST`                       | core              | `off` skips the folder watcher.                                                                                     |
+| `VT_NOTES`                        | core              | `off` stops recording calls and the notes decision model.                                                           |
+| `VT_CAPTURE`                      | core              | `off` refuses call capture (also off by default in Preferencias).                                                   |
+| `VT_GLOSSARY`                     | voice             | Glossary TOML, default `voice/glossary.toml`.                                                                       |
+| `DISCORD_BOT_TOKEN`               | core              | Discord bot token. Without it the Discord feature is hidden. Never sent to the webview.                             |
+| `DISCORD_APP_ID`                  | core              | Application id; builds the invite link shown in the Discord view.                                                   |
+| `VT_DISCORD`                      | core              | `off` disables Discord even with a token.                                                                           |
+| `VT_DISCORD_NAMES`                | core              | Words that address the agent when talking is on, comma-separated. Default `voicetalk,voice talk`.                   |
+| `VT_DISCORD_ADDRESS`              | core              | `name` (default) answers only when addressed, `always` answers every utterance.                                     |
+| `VT_STT_MAX_CLIENTS`              | voice             | Concurrent STT links. Default 8 (mic call plus one per Discord speaker).                                            |
+| `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars          | Set by the Tauri shell. Core default is 4310.                                                                       |
+| `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell       | Overrides for the `bun`/`uv` paths and the repo root.                                                               |
+| `VT_LLAMA_SERVER`                 | `bun dev --local` | llama-server binary. Default `llama-server` on PATH.                                                                |
+| `VT_LLM_GGUF`, `VT_EMBED_GGUF`    | `bun dev --local` | Model files. Default: found in the Hugging Face cache.                                                              |
+| `VT_LLAMA_ARGS`                   | `bun dev --local` | Extra llama-server flags. Default `-ngl 99`.                                                                        |
 
 ## Discord bot
 

@@ -1,4 +1,22 @@
-export type Brain = 'local' | 'claude'
+export type BrainProvider =
+  | 'local'
+  | 'ollama'
+  | 'claude'
+  | 'openai'
+  | 'xai'
+  | 'custom'
+export type BrainEffort = 'off' | 'low' | 'medium' | 'high'
+export type BrainStyle = 'tranquilo' | 'conciso' | 'detallado'
+export interface Brain {
+  provider: BrainProvider
+  /** Empty = the preset's default model. */
+  model: string
+  /** Empty = the preset's default endpoint. */
+  baseUrl: string
+  effort: BrainEffort
+  style: BrainStyle
+  systemPrompt: string
+}
 export type SttModel = 'phonon' | 'canary' | 'fluid'
 export type { ThemePreference } from '@/lib/theme'
 import type { ThemePreference } from '@/lib/theme'
@@ -26,7 +44,7 @@ export interface Preferences {
 
 /** Same shape, every field optional (nested objects too). */
 export interface PreferencesPatch {
-  brain?: Brain
+  brain?: Partial<Brain>
   stt?: SttModel
   llmUrl?: string
   voiceId?: string
@@ -41,6 +59,10 @@ export interface PreferencesPatch {
 export interface KeyStatus {
   cartesia: boolean
   anthropic: boolean
+  openai: boolean
+  xai: boolean
+  /** Optional key of the custom endpoint. */
+  custom: boolean
   discord: boolean
 }
 
@@ -54,7 +76,8 @@ export interface ModelStatus {
 }
 
 export const PREFS_FIELDS = `
-  brain stt llmUrl voiceId folders theme
+  brain { provider model baseUrl effort style systemPrompt }
+  stt llmUrl voiceId folders theme
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }
   capture { enabled consentAck }

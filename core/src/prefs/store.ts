@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import {
   DEFAULT_PREFERENCES,
   mergePreferences,
+  migrateLegacy,
   patchSchema,
   preferencesSchema,
   type Preferences,
@@ -61,7 +62,7 @@ export function createPrefsStore(dir: string): PrefsStore {
     if (!existsSync(path)) return DEFAULT_PREFERENCES
     try {
       const raw: unknown = JSON.parse(readFileSync(path, 'utf8'))
-      const partial = patchSchema.safeParse(raw)
+      const partial = patchSchema.safeParse(migrateLegacy(raw))
       if (partial.success) {
         const merged = preferencesSchema.safeParse(
           mergePreferences(DEFAULT_PREFERENCES, partial.data),
@@ -94,7 +95,7 @@ export function createPrefsStore(dir: string): PrefsStore {
       return current
     },
     update(patch) {
-      const parsed = patchSchema.safeParse(patch)
+      const parsed = patchSchema.safeParse(migrateLegacy(patch))
       if (!parsed.success) {
         throw new PreferencesError(
           parsed.error.issues

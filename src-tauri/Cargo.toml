@@ -1,6 +1,6 @@
 [package]
 name = "voicetalk"
-version = "0.10.0"
+version = "0.11.0"
 description = "VoiceTalk desktop shell (Tauri v2): supervises core (Bun) and voice (Python) sidecars"
 authors = ["Faku"]
 edition = "2021"

@@ -11,27 +11,50 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
 export interface OpenAiCompatOptions {
   baseUrl: string
   model?: string
-  temperature?: number
+  /** Sampling temperature. `null` omits the field (OpenAI and xAI reasoning models reject it). */
+  temperature?: number | null
   fetch?: FetchLike
+  /** Provider id used in logs. Default `local`. */
+  name?: string
+  /** Sent as `Authorization: Bearer`. Never logged. */
+  apiKey?: string
+  /** Name of the output cap field. OpenAI wants `max_completion_tokens`. Default `max_tokens`. */
+  maxTokensParam?: 'max_tokens' | 'max_completion_tokens'
+  /** Tokens added to the output cap so reasoning does not eat the spoken reply. Default 0. */
+  maxTokensHeadroom?: number
+  /** Extra request fields (thinking switch, reasoning effort). Default turns thinking off. */
+  body?: Record<string, unknown>
 }
 
 interface StreamChunk {
   choices?: Array<{ delta?: { content?: string | null } }>
 }
 
-// Local llama-server (OpenAI-compatible). LFM thinks by default; thinking is always off here
-// because the reply is spoken and every token before the first word is latency.
+// OpenAI-compatible chat: the local llama-server, Ollama, OpenAI, xAI and custom endpoints.
+// LFM thinks by default; the default body keeps thinking off because the reply is spoken and
+// every token before the first word is latency. Presets override `body` (see presets.ts).
 export class OpenAiCompatChat implements ChatProvider {
-  readonly name = 'local'
+  readonly name: string
   private readonly url: string
   private readonly model: string | undefined
-  private readonly temperature: number
+  private readonly temperature: number | null
+  private readonly apiKey: string | undefined
+  private readonly maxTokensParam: string
+  private readonly headroom: number
+  private readonly extraBody: Record<string, unknown>
   private readonly fetchImpl: FetchLike
 
   constructor(opts: OpenAiCompatOptions) {
+    this.name = opts.name ?? 'local'
     this.url = `${opts.baseUrl.replace(/\/+$/, '')}/v1/chat/completions`
     this.model = opts.model
-    this.temperature = opts.temperature ?? 0.3
+    this.temperature = opts.temperature === undefined ? 0.3 : opts.temperature
+    this.apiKey = opts.apiKey
+    this.maxTokensParam = opts.maxTokensParam ?? 'max_tokens'
+    this.headroom = opts.maxTokensHeadroom ?? 0
+    this.extraBody = opts.body ?? {
+      chat_template_kwargs: { enable_thinking: false },
+    }
     this.fetchImpl = opts.fetch ?? ((input, init) => fetch(input, init))
   }
 
@@ -56,14 +79,20 @@ export class OpenAiCompatChat implements ChatProvider {
       try {
         res = await this.fetchImpl(this.url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+          },
           body: JSON.stringify({
             ...(this.model ? { model: this.model } : {}),
             messages,
             stream: true,
-            temperature: this.temperature,
-            max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-            chat_template_kwargs: { enable_thinking: false },
+            ...(this.temperature === null
+              ? {}
+              : { temperature: this.temperature }),
+            [this.maxTokensParam]:
+              (opts.maxTokens ?? DEFAULT_MAX_TOKENS) + this.headroom,
+            ...this.extraBody,
           }),
           signal: controller.signal,
         })

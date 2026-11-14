@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import {
+  DEFAULT_BRAIN,
+  EFFORTS,
+  PROVIDERS,
+  STYLES,
+  SYSTEM_PROMPT_MAX,
+} from '../llm/presets.ts'
 
 // Sofía, the default Cartesia voice (ADR 0003 / 0004).
 export const DEFAULT_VOICE_ID = '4663e61a-a9c2-40e1-94c5-c461ed9d3d31'
@@ -53,8 +60,20 @@ const onboardingShape = z.object({
   completedAt: z.iso.datetime(),
 })
 
+const brainShape = z.object({
+  provider: z.enum(PROVIDERS),
+  /** Model id. Empty = the preset default. */
+  model: z.string().trim().max(120),
+  /** Endpoint for Ollama and custom. Empty = the preset default (local uses `llmUrl`). */
+  baseUrl: z.union([z.literal(''), httpUrl]),
+  effort: z.enum(EFFORTS),
+  style: z.enum(STYLES),
+  /** Extra instructions appended to the persona. */
+  systemPrompt: z.string().max(SYSTEM_PROMPT_MAX),
+})
+
 const shape = z.object({
-  brain: z.enum(['local', 'claude']),
+  brain: brainShape,
   llmUrl: httpUrl,
   voiceId: z.string().trim().min(1).max(64),
   stt: z.enum(STT_MODELS),
@@ -74,6 +93,7 @@ export type Preferences = z.infer<typeof shape>
 
 export const patchSchema = shape
   .extend({
+    brain: brainShape.partial(),
     thresholds: thresholdsShape.partial(),
     location: locationShape.partial(),
     capture: captureShape.partial(),
@@ -82,7 +102,7 @@ export const patchSchema = shape
 export type PreferencesPatch = z.infer<typeof patchSchema>
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  brain: 'local',
+  brain: DEFAULT_BRAIN,
   llmUrl: DEFAULT_LLM_URL,
   voiceId: DEFAULT_VOICE_ID,
   stt: DEFAULT_STT,
@@ -94,6 +114,19 @@ export const DEFAULT_PREFERENCES: Preferences = {
   onboarding: null,
 }
 
+/**
+ * Before v0.11 `brain` was the string `'local'` or `'claude'`. Rewrites it to the object form so old
+ * preference files (and old clients) keep working. Anything else is left for the schema to reject.
+ */
+export function migrateLegacy(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw
+  const { brain } = raw as { brain?: unknown }
+  if (brain === 'local' || brain === 'claude') {
+    return { ...raw, brain: { provider: brain } }
+  }
+  return raw
+}
+
 /** Applies a validated patch: nested objects merge, arrays and scalars replace. */
 export function mergePreferences(
   base: Preferences,
@@ -103,10 +136,11 @@ export function mergePreferences(
     Object.fromEntries(
       Object.entries(value).filter(([, v]) => v !== undefined),
     ) as Partial<T>
-  const { thresholds, location, capture, ...rest } = patch
+  const { brain, thresholds, location, capture, ...rest } = patch
   return {
     ...base,
     ...defined(rest),
+    brain: { ...base.brain, ...defined(brain ?? {}) },
     thresholds: { ...base.thresholds, ...defined(thresholds ?? {}) },
     location: { ...base.location, ...defined(location ?? {}) },
     capture: { ...base.capture, ...defined(capture ?? {}) },
