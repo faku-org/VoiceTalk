@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_GLOSSARY = Path(__file__).resolve().parents[2] / "glossary.toml"
 TRY_AGAIN_LATER = 1013
+DEFAULT_MAX_CLIENTS = 8
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,9 @@ class Settings:
     glossary_path: Path = DEFAULT_GLOSSARY
     llm_url: str | None = None  # VT_LLM_URL, OpenAI-compatible base incl. /v1
     llm_model: str = "local"  # VT_LLM_MODEL
+    # VT_STT_MAX_CLIENTS: concurrent /stt links. The mic call uses one; a Discord session opens one per speaker.
+    # Each link has its own VAD state; transcription stays serialized on one ASR worker.
+    max_clients: int = DEFAULT_MAX_CLIENTS
 
     @classmethod
     def from_env(cls, glossary_path: Path | None = None) -> Settings:
@@ -48,7 +52,16 @@ class Settings:
             glossary_path=glossary_path or Path(os.environ.get("VT_GLOSSARY", DEFAULT_GLOSSARY)),
             llm_url=os.environ.get("VT_LLM_URL") or None,
             llm_model=os.environ.get("VT_LLM_MODEL", "local"),
+            max_clients=_max_clients(os.environ.get("VT_STT_MAX_CLIENTS")),
         )
+
+
+def _max_clients(raw: str | None) -> int:
+    try:
+        value = int(raw) if raw else DEFAULT_MAX_CLIENTS
+    except ValueError:
+        return DEFAULT_MAX_CLIENTS
+    return value if value >= 1 else DEFAULT_MAX_CLIENTS
 
 
 class EngineLike(Protocol):
@@ -77,7 +90,7 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
         else None
     )
     asr_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asr")
-    busy = False
+    clients = 0
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -95,8 +108,8 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
 
     @app.websocket("/stt")
     async def stt_socket(ws: WebSocket) -> None:
-        nonlocal busy
-        if busy:
+        nonlocal clients
+        if clients >= settings.max_clients:
             await ws.close(code=TRY_AGAIN_LATER)
             return
         if engine.status != "ready":
@@ -105,7 +118,7 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
             await ws.send_json({"type": "error", "message": f"stt not ready: {engine.status}"})
             await ws.close(code=TRY_AGAIN_LATER)
             return
-        busy = True
+        clients += 1
         await ws.accept()
 
         out: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -164,7 +177,7 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
         except WebSocketDisconnect:
             pass
         finally:
-            busy = False
+            clients -= 1
             send_task.cancel()
             work_task.cancel()
 

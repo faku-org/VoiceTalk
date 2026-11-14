@@ -8,12 +8,17 @@ export interface TranscriptEntry {
   text: string
   // Epoch ms when the utterance started (agent: first token).
   t: number
+  // Real name of the speaker when the call has several (Discord display name).
+  speakerName?: string
 }
+
+// Where a call comes from. Stored as sessions.source (ADR 0010); new capture sources add values.
+export type CallSource = 'call' | 'discord' | (string & {})
 
 export type CallEndReason = 'client' | 'error' | 'shutdown'
 
 export interface CallEventMap {
-  callStarted: { callId: string; t: number }
+  callStarted: { callId: string; t: number; source?: CallSource }
   // Fired once per utterance, when its text is final (agent: when the turn ends or is cut).
   utteranceAdded: { callId: string; entry: TranscriptEntry }
   callEnded: { callId: string; t: number; reason: CallEndReason }

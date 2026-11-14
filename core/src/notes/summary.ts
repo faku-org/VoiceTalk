@@ -94,6 +94,11 @@ export const formatDate = (ms: number): string =>
 
 const WHO: Record<SpeakerId, string> = { user: 'usuario', agent: 'agente' }
 
+const joinNames = (names: string[]): string =>
+  names.length < 2
+    ? (names[0] ?? '')
+    : `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`
+
 /** Title shown in the sessions list: the first user words, or the date. */
 export function sessionTitle(lines: Line[], startedAt: number): string {
   const first = lines.find((l) => l.speaker === 'user')?.text.trim()
@@ -112,12 +117,17 @@ export function externalNoteBody(input: {
   startedAt: number
   location: string
   speakers: SpeakerId[]
+  /** Real names of a multi-speaker session. Replace the generic usuario and agente. */
+  names?: string[]
 }): string {
   const { draft } = input
+  const who = input.names?.length
+    ? input.names
+    : input.speakers.map((s) => WHO[s])
   const head = [
     formatDate(input.startedAt),
     input.location.trim() || null,
-    `con ${input.speakers.map((s) => WHO[s]).join(' y ')}`,
+    `con ${joinNames(who)}`,
   ]
     .filter(Boolean)
     .join(' · ')

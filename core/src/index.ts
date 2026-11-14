@@ -6,6 +6,7 @@ import {
   type CallSocketData,
 } from './call/index.ts'
 import { loadConfig } from './config.ts'
+import { createDiscordService } from './discord/index.ts'
 import { createServices } from './services.ts'
 import { VERSION } from './version.ts'
 
@@ -18,7 +19,11 @@ if (process.env.VT_INGEST?.trim().toLowerCase() !== 'off')
 // Persists calls and runs the decision model; `VT_NOTES=off` leaves the call path unrecorded.
 if (process.env.VT_NOTES?.trim().toLowerCase() !== 'off')
   services.notes.recorder.start()
-const call = createCallSocket(createCallRuntime(config))
+const runtime = createCallRuntime(config)
+const call = createCallSocket(runtime)
+// Hidden without DISCORD_BOT_TOKEN; `VT_DISCORD=off` disables it. A failed login never takes the core down.
+const discord = createDiscordService(runtime)
+void discord.start()
 
 // Loopback only: Nginx/Tailscale front it, never the network directly.
 const server = Bun.serve<CallSocketData>({
@@ -38,6 +43,7 @@ console.log(
 
 const stop = () => {
   server.stop()
+  void discord.stop()
   // Let open summaries finish (they are short) before the database closes.
   void services.notes.recorder.stop().finally(() => {
     services.close()

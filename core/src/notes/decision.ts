@@ -5,12 +5,16 @@ import type { ChatMessage, ChatProvider } from '../llm/index.ts'
 export interface Line {
   speaker: 'user' | 'agent'
   text: string
+  /** Real name when the session has several speakers (Discord). Replaces the generic label. */
+  name?: string
 }
 
 export const SPEAKER_LABEL = { user: 'Usuario', agent: 'Agente' } as const
 
 export function formatLines(lines: Line[]): string {
-  return lines.map((l) => `${SPEAKER_LABEL[l.speaker]}: ${l.text}`).join('\n')
+  return lines
+    .map((l) => `${l.name ?? SPEAKER_LABEL[l.speaker]}: ${l.text}`)
+    .join('\n')
 }
 
 /**
