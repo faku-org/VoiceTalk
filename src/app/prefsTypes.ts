@@ -1,4 +1,5 @@
 export type Brain = 'local' | 'claude'
+export type SttModel = 'phonon' | 'canary' | 'fluid'
 export type { ThemePreference } from '@/lib/theme'
 import type { ThemePreference } from '@/lib/theme'
 
@@ -10,6 +11,8 @@ export interface Thresholds {
 
 export interface Preferences {
   brain: Brain
+  /** Speech recognition model; the voice service swaps it in the background. */
+  stt: SttModel
   llmUrl: string
   voiceId: string
   thresholds: Thresholds
@@ -24,6 +27,7 @@ export interface Preferences {
 /** Same shape, every field optional (nested objects too). */
 export interface PreferencesPatch {
   brain?: Brain
+  stt?: SttModel
   llmUrl?: string
   voiceId?: string
   thresholds?: Partial<Thresholds>
@@ -50,7 +54,7 @@ export interface ModelStatus {
 }
 
 export const PREFS_FIELDS = `
-  brain llmUrl voiceId folders theme
+  brain stt llmUrl voiceId folders theme
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }
   capture { enabled consentAck }

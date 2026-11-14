@@ -1,4 +1,9 @@
-"""FastAPI app: GET /health and WS /stt (see docs/adr/0002-audio-websocket.md).
+"""FastAPI app: GET /health, the STT model endpoints and WS /stt (see docs/adr/0002-audio-websocket.md).
+
+STT model (ADR 0011)
+- GET  /stt/models -> {"current":id,"pending":id|null,"models":[{id,name,repo,device,forced_language}]}
+- POST /stt/model {"id":str} -> 202; loads it in the background, the current model keeps serving
+  until the new one is ready. /health reports progress (`model`, `pending`, `error`).
 
 WS /stt protocol
 - client -> server: binary frames, pcm_s16le mono 16 kHz, any frame size.
@@ -24,7 +29,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+
+from .backends import CATALOG, create_backend, resolve_model_id
 
 from .glossary import Glossary
 from .llm import LlmCorrector
@@ -45,6 +53,8 @@ class Settings:
     # VT_STT_MAX_CLIENTS: concurrent /stt links. The mic call uses one; a Discord session opens one per speaker.
     # Each link has its own VAD state; transcription stays serialized on one ASR worker.
     max_clients: int = DEFAULT_MAX_CLIENTS
+    # VT_STT_MODEL: model loaded at start (phonon | canary | fluid). Core switches it from preferences.
+    stt_model: str = "phonon"
 
     @classmethod
     def from_env(cls, glossary_path: Path | None = None) -> Settings:
@@ -53,6 +63,7 @@ class Settings:
             llm_url=os.environ.get("VT_LLM_URL") or None,
             llm_model=os.environ.get("VT_LLM_MODEL", "local"),
             max_clients=_max_clients(os.environ.get("VT_STT_MAX_CLIENTS")),
+            stt_model=resolve_model_id(os.environ.get("VT_STT_MODEL")),
         )
 
 
@@ -67,23 +78,30 @@ def _max_clients(raw: str | None) -> int:
 class EngineLike(Protocol):
     status: str
     error: str | None
+    model: str
+    pending: str | None
 
     def load(self) -> None: ...
+    def switch(self, model_id: str) -> None: ...
     def wait_ready(self, timeout: float | None = None) -> bool: ...
     def transcribe(self, audio: Any) -> str: ...
     def new_detector(self) -> Detector: ...
 
 
+class ModelChoice(BaseModel):
+    id: str
+
+
 def create_app(settings: Settings | None = None, engine: EngineLike | None = None) -> FastAPI:
     if settings is None:
         settings = Settings.from_env()
+    glossary = Glossary.from_toml(settings.glossary_path)
+    glossary_terms = sorted({entry.canonical for entry in glossary.entries.values()})
     if engine is None:
         from .engine import Engine
 
-        engine = Engine()
-
-    glossary = Glossary.from_toml(settings.glossary_path)
-    glossary_terms = sorted({entry.canonical for entry in glossary.entries.values()})
+        # Glossary terms double as hotwords for backends that support them (Phonon).
+        engine = Engine(settings.stt_model, factory=lambda model_id: create_backend(model_id, glossary_terms))
     llm = (
         LlmCorrector(settings.llm_url, model=settings.llm_model, terms=glossary_terms)
         if settings.llm_url
@@ -104,7 +122,29 @@ def create_app(settings: Settings | None = None, engine: EngineLike | None = Non
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        return {"ok": True, "stt": engine.status}
+        return {
+            "ok": True,
+            "stt": engine.status,
+            "model": engine.model,
+            "pending": engine.pending,
+            "error": engine.error,
+        }
+
+    @app.get("/stt/models")
+    async def stt_models() -> dict[str, Any]:
+        return {
+            "current": engine.model,
+            "pending": engine.pending,
+            "models": [vars(m) for m in CATALOG.values()],
+        }
+
+    @app.post("/stt/model", status_code=202)
+    async def stt_model(body: ModelChoice) -> dict[str, Any]:
+        if body.id not in CATALOG:
+            raise HTTPException(status_code=422, detail=f"unknown stt model {body.id!r}")
+        if body.id != engine.model or engine.status != "ready":
+            threading.Thread(target=engine.switch, args=(body.id,), name="stt-switch", daemon=True).start()
+        return {"current": engine.model, "pending": body.id if body.id != engine.model else None}
 
     @app.websocket("/stt")
     async def stt_socket(ws: WebSocket) -> None:

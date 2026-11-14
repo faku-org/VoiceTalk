@@ -5,6 +5,11 @@ export const DEFAULT_VOICE_ID = '4663e61a-a9c2-40e1-94c5-c461ed9d3d31'
 export const DEFAULT_LLM_URL = 'http://127.0.0.1:8080/v1'
 export const ONBOARDING_VERSION = 1
 
+/** Speech-to-text models the voice sidecar can load. */
+export const STT_MODELS = ['phonon', 'canary', 'fluid'] as const
+export type SttModelId = (typeof STT_MODELS)[number]
+export const DEFAULT_STT: SttModelId = 'phonon'
+
 const httpUrl = z
   .string()
   .trim()
@@ -52,6 +57,7 @@ const shape = z.object({
   brain: z.enum(['local', 'claude']),
   llmUrl: httpUrl,
   voiceId: z.string().trim().min(1).max(64),
+  stt: z.enum(STT_MODELS),
   thresholds: thresholdsShape,
   folders: z
     .array(z.string().trim().min(1).max(1024))
@@ -79,6 +85,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   brain: 'local',
   llmUrl: DEFAULT_LLM_URL,
   voiceId: DEFAULT_VOICE_ID,
+  stt: DEFAULT_STT,
   thresholds: { respondConfidence: 0.6, vadSensitivity: 0.5, endOfTurnMs: 700 },
   folders: [],
   location: { manual: '', ipGeolocation: false },

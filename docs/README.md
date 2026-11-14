@@ -8,7 +8,7 @@ Voice companion desktop app (Tauri): voice chat with a cloud TTS and local STT, 
 - `.github/workflows/`: `checks.yml` and `format.yml` on PRs, `release.yml` on `v*` tags.
 - `src/`: React webview: app shell, onboarding, preferences (`src/app`, `src/features/*`), call screen in `src/features/call`, mic and playback in `src/audio`.
 - `core/`: Bun sidecar (Elysia + GraphQL Yoga/Pothos). Call loop over `WS /call`, LLM brain, Cartesia TTS, SQLite storage, folder ingest/RAG, read-only Code Mode, preferences, optional Discord bot (`core/src/discord`).
-- `voice/`: Python sidecar (uv, FastAPI). Silero VAD + Fluid Speech Pro STT over `WS /stt` (several links: the mic call plus one per Discord speaker), glossary post-correction.
+- `voice/`: Python sidecar (uv, FastAPI). Silero VAD + selectable STT (Phonon-2.5 default, Canary, Fluid Speech Pro) over `WS /stt` (several links: the mic call plus one per Discord speaker), glossary post-correction.
 
 Dev: `bun run tauri:dev`. Each sidecar also runs alone: `bun core/src/index.ts`, `uv run --project voice voicetalk-voice --port <N>`.
 
@@ -26,9 +26,11 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0008: Sessions, decision model and notes](adr/0008-notes.md)
 - [0009: Call capture](adr/0009-call-capture.md): per-process WASAPI loopback in Rust, `WS /capture`, consent.
 - [0010: Discord voice channels](adr/0010-discord.md): bot library, DAVE, per-user STT, talking gate, transparency.
+- [0011: User-selectable models](adr/0011-model-selection.md): Phonon-2.5 default STT, Canary/Fluid options, prefs applied to the runtime.
 
 ## Fixes batches
 
+- [2026-11-14 (v0.10.0)](fixes-2026-11-14-v0.10.0/README.md): Phonon default STT, model selection, prefs applied to the runtime.
 - [2026-11-14 (v0.6.0)](fixes-2026-11-14-v0.6.0/README.md): brain providers, voice providers, chat tab, dashboard, generative UI, CUA. Roadmap: [project 6](https://github.com/orgs/faku-org/projects/6).
 
 ## Spikes
