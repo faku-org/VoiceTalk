@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from fakes import FakeEngine, read_pcm, write_synthetic_wav
-from voicetalk_voice.app import MAX_STT_CONNECTIONS, Settings, create_app
+from voicetalk_voice.app import Settings, create_app
 
 GLOSSARY_PATH = Path(__file__).resolve().parents[1] / "glossary.toml"
 CHUNK_MS = 20
@@ -110,13 +110,10 @@ def test_ws_allows_concurrent_connections_up_to_the_limit(wav: Path) -> None:
 
 
 def test_ws_connection_over_the_limit_is_refused() -> None:
-    app = create_app(_settings(), engine=FakeEngine())
+    settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=2)
+    app = create_app(settings, engine=FakeEngine())
     with TestClient(app) as client:
-        with (
-            client.websocket_connect("/stt"),
-            client.websocket_connect("/stt"),
-            client.websocket_connect("/stt"),
-        ):
+        with client.websocket_connect("/stt"), client.websocket_connect("/stt"):
             with pytest.raises(WebSocketDisconnect) as refused:
                 with client.websocket_connect("/stt") as extra:
                     extra.receive_json()
@@ -124,8 +121,9 @@ def test_ws_connection_over_the_limit_is_refused() -> None:
 
 
 def test_ws_slot_is_freed_when_a_connection_closes() -> None:
-    app = create_app(_settings(), engine=FakeEngine())
+    settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=1)
+    app = create_app(settings, engine=FakeEngine())
     with TestClient(app) as client:
-        for _ in range(MAX_STT_CONNECTIONS + 2):
+        for _ in range(3):
             with client.websocket_connect("/stt"):
                 pass

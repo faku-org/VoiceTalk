@@ -16,6 +16,11 @@ export function registerNotes(builder: Builder): void {
         speaker: t.exposeString('speaker'),
         label: t.string({ nullable: true, resolve: (u) => u.label }),
         text: t.exposeString('text'),
+        // Real name of the speaker (Discord display name); null for the mic call.
+        speakerName: t.string({
+          nullable: true,
+          resolve: (u) => u.speakerName ?? null,
+        }),
         tStart: t.exposeFloat('tStart'),
         tEnd: t.exposeFloat('tEnd'),
       }),

@@ -32,6 +32,15 @@ describe('sessions format', () => {
     expect(statusLabel('other')).toBe('other')
     expect(speakerLabel('user')).toBe('Tú')
     expect(speakerLabel('agent')).toBe('Agente')
+    expect(speakerLabel('user', 'Ana')).toBe('Ana')
+    expect(speakerLabel('user', '  ')).toBe('Tú')
+    expect(speakerLabel('agent', null)).toBe('Agente')
+  })
+
+  test('source badge only for non-mic captures', () => {
+    expect(sourceLabel('discord')).toBe('Discord')
+    expect(sourceLabel('call')).toBeNull()
+    expect(sourceLabel(undefined)).toBeNull()
   })
 
   test('captured calls: remote label and platform', () => {

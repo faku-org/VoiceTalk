@@ -9,7 +9,7 @@ export interface Session {
   location: string
   title: string | null
   status: SessionStatus
-  /** 'call' for a voice call, or the platform key of a captured call (ADR 0009). */
+  /** 'call' for a voice call, 'discord' for a Discord channel (ADR 0010), or the platform key of a captured call (ADR 0009). */
   source: string
 }
 
@@ -23,6 +23,8 @@ export interface UtteranceRow {
   tEnd: number
   text: string
   source: 'stt' | 'agent' | 'capture'
+  /** Real name of the speaker in a multi-speaker session (Discord display name). */
+  speakerName?: string | null
 }
 
 export interface Note {

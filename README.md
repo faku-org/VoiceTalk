@@ -55,24 +55,57 @@ Tauri shell (Rust, React webview)
 
 Every variable is optional except `CARTESIA_API_KEY`, which speech output needs. The full list with comments is in [`.env.example`](.env.example).
 
-| Variable                          | Used by           | Default / meaning                                                             |
-| --------------------------------- | ----------------- | ----------------------------------------------------------------------------- |
-| `CARTESIA_API_KEY`                | core              | Cartesia TTS key. Never sent to the webview.                                  |
-| `ANTHROPIC_API_KEY`               | core              | Only with `VT_BRAIN=claude`.                                                  |
-| `VT_BRAIN`                        | core              | `local` (llama-server) or `claude` (Haiku).                                   |
-| `VT_LLM_URL`, `VT_LLM_MODEL`      | core, voice       | `http://127.0.0.1:8080`. In voice, unset disables the LLM post-correction.    |
-| `VT_EMBED_URL`, `VT_EMBED_MODEL`  | core              | `http://127.0.0.1:8891/v1/embeddings`, `embeddinggemma-2`.                    |
-| `VT_FOLDERS`                      | core              | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`. |
-| `VT_DATA_DIR`                     | core              | SQLite and index. Default `core/.data` (gitignored).                          |
-| `VT_INGEST`                       | core              | `off` skips the folder watcher.                                               |
-| `VT_NOTES`                        | core              | `off` stops recording calls and the notes decision model.                     |
-| `VT_CAPTURE`                      | core              | `off` refuses call capture (also off by default in Preferencias).             |
-| `VT_GLOSSARY`                     | voice             | Glossary TOML, default `voice/glossary.toml`.                                 |
-| `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars          | Set by the Tauri shell. Core default is 4310.                                 |
-| `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell       | Overrides for the `bun`/`uv` paths and the repo root.                         |
-| `VT_LLAMA_SERVER`                 | `bun dev --local` | llama-server binary. Default `llama-server` on PATH.                          |
-| `VT_LLM_GGUF`, `VT_EMBED_GGUF`    | `bun dev --local` | Model files. Default: found in the Hugging Face cache.                        |
-| `VT_LLAMA_ARGS`                   | `bun dev --local` | Extra llama-server flags. Default `-ngl 99`.                                  |
+| Variable                          | Used by           | Default / meaning                                                                                 |
+| --------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
+| `CARTESIA_API_KEY`                | core              | Cartesia TTS key. Never sent to the webview.                                                      |
+| `ANTHROPIC_API_KEY`               | core              | Only with `VT_BRAIN=claude`.                                                                      |
+| `VT_BRAIN`                        | core              | `local` (llama-server) or `claude` (Haiku).                                                       |
+| `VT_LLM_URL`, `VT_LLM_MODEL`      | core, voice       | `http://127.0.0.1:8080`. In voice, unset disables the LLM post-correction.                        |
+| `VT_EMBED_URL`, `VT_EMBED_MODEL`  | core              | `http://127.0.0.1:8891/v1/embeddings`, `embeddinggemma-2`.                                        |
+| `VT_FOLDERS`                      | core              | Folders to ingest, `;`-separated. Default `%USERPROFILE%\Documents\Personal`.                     |
+| `VT_DATA_DIR`                     | core              | SQLite and index. Default `core/.data` (gitignored).                                              |
+| `VT_INGEST`                       | core              | `off` skips the folder watcher.                                                                   |
+| `VT_NOTES`                        | core              | `off` stops recording calls and the notes decision model.                                         |
+| `VT_CAPTURE`                      | core              | `off` refuses call capture (also off by default in Preferencias).                                 |
+| `VT_GLOSSARY`                     | voice             | Glossary TOML, default `voice/glossary.toml`.                                                     |
+| `DISCORD_BOT_TOKEN`               | core              | Discord bot token. Without it the Discord feature is hidden. Never sent to the webview.           |
+| `DISCORD_APP_ID`                  | core              | Application id; builds the invite link shown in the Discord view.                                 |
+| `VT_DISCORD`                      | core              | `off` disables Discord even with a token.                                                         |
+| `VT_DISCORD_NAMES`                | core              | Words that address the agent when talking is on, comma-separated. Default `voicetalk,voice talk`. |
+| `VT_DISCORD_ADDRESS`              | core              | `name` (default) answers only when addressed, `always` answers every utterance.                   |
+| `VT_STT_MAX_CLIENTS`              | voice             | Concurrent STT links. Default 8 (mic call plus one per Discord speaker).                          |
+| `VT_CORE_PORT`, `VT_VOICE_PORT`   | sidecars          | Set by the Tauri shell. Core default is 4310.                                                     |
+| `VT_BUN`, `VT_UV`, `VT_REPO_ROOT` | Tauri shell       | Overrides for the `bun`/`uv` paths and the repo root.                                             |
+| `VT_LLAMA_SERVER`                 | `bun dev --local` | llama-server binary. Default `llama-server` on PATH.                                              |
+| `VT_LLM_GGUF`, `VT_EMBED_GGUF`    | `bun dev --local` | Model files. Default: found in the Hugging Face cache.                                            |
+| `VT_LLAMA_ARGS`                   | `bun dev --local` | Extra llama-server flags. Default `-ngl 99`.                                                      |
+
+## Discord bot
+
+VoiceTalk can join a Discord voice channel as a bot, transcribe each person under their display name, and save the call as a session (`source = discord`). It can also answer by voice, off by default. Design and limits: [ADR 0010](docs/adr/0010-discord.md). Bot accounts only: never a user token.
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) > New Application. Copy the **Application ID**.
+2. Bot tab > Reset Token and copy it. Leave every Privileged Gateway Intent **off**: VoiceTalk uses only `Guilds` and `GuildVoiceStates`.
+3. Put them in `.env.local` (never commit them):
+
+   ```
+   DISCORD_BOT_TOKEN=<bot token>
+   DISCORD_APP_ID=<application id>
+   ```
+
+4. Start the app. The Discord view shows an invite link built from the application id. It is the same as this URL with your id:
+
+   ```
+   https://discord.com/oauth2/authorize?client_id=<application id>&permissions=2150631424&scope=bot%20applications.commands
+   ```
+
+   Scopes `bot` and `applications.commands`. Permissions: Connect, Speak, Use Slash Commands, and Send Messages (needed to post the "this call is being transcribed" notice when you join from the app).
+
+5. Join with `/voicetalk join` from a voice channel (add `talk:true` to let it answer when named), or pick the server and channel in the Discord view. Leave with `/voicetalk leave` or the Leave button.
+
+On every join the bot posts in the channel's text chat that it is transcribing. If it cannot post, it does not join. The app shows a recording indicator while a session is active. Without `DISCORD_BOT_TOKEN`, or with `VT_DISCORD=off`, the feature is hidden.
+
+Live testing needs a real bot and a channel with at least two people; the automated tests use a mocked gateway.
 
 ## Checks
 

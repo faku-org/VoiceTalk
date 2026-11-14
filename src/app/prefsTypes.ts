@@ -37,6 +37,7 @@ export interface PreferencesPatch {
 export interface KeyStatus {
   cartesia: boolean
   anthropic: boolean
+  discord: boolean
 }
 
 export interface ModelStatus {

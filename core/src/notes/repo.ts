@@ -139,6 +139,7 @@ interface UtteranceDbRow {
   t_end: number
   text: string
   source: 'stt' | 'agent' | 'capture'
+  speaker_name: string | null
 }
 
 export class SqliteUtteranceRepo implements UtteranceRepo {
@@ -146,8 +147,8 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
 
   add(u: UtteranceRow): void {
     this.db.run(
-      `INSERT INTO utterances (id, session_id, speaker, label, t_start, t_end, text, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO utterances (id, session_id, speaker, label, t_start, t_end, text, source, speaker_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET text = excluded.text, t_end = excluded.t_end`,
       [
         u.id,
@@ -158,6 +159,7 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
         u.tEnd,
         u.text,
         u.source,
+        u.speakerName ?? null,
       ],
     )
   }
@@ -177,6 +179,7 @@ export class SqliteUtteranceRepo implements UtteranceRepo {
         tEnd: r.t_end,
         text: r.text,
         source: r.source,
+        speakerName: r.speaker_name,
       }))
   }
 

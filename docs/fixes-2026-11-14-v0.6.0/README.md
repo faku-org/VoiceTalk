@@ -8,6 +8,12 @@ Batch from Faku after the P1–P5 integration. Roadmap: [VoiceTalk Roadmap](http
 - [x] `.env.example` + gitignored `.env.local`
 - [x] `bun dev --local` for local testing (llama-servers + tauri dev), PR #5
 
+## Call platforms
+
+- [~] Call capture from any app (WASAPI per-process loopback), PR #13, v0.7.0. Tests green; live capture in Tauri not yet tried
+- [~] Discord bot in voice channels, PR #12, v0.8.0. Tests green; real bot test pending (Faku creates the bot and token)
+- [x] Integration of both, v0.9.0: shared `discord` source, no internal notes for capture or bot sessions
+
 ## Brain (#6)
 
 - [ ] Brain not hardcoded to Claude: presets for llama-server, Ollama, Claude, OpenAI, xAI Grok, custom endpoint

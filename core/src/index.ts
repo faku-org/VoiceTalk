@@ -13,6 +13,7 @@ import {
 } from './capture/index.ts'
 import { loadConfig } from './config.ts'
 import { getPrefsStore } from './prefs/store.ts'
+import { createDiscordService } from './discord/index.ts'
 import { createServices } from './services.ts'
 import { VERSION } from './version.ts'
 
@@ -38,6 +39,9 @@ const capture = createCaptureSocket({
 type SocketData = CallSocketData | CaptureSocketData
 const isCapture = (d: SocketData): d is CaptureSocketData =>
   'kind' in d && d.kind === 'capture'
+// Hidden without DISCORD_BOT_TOKEN; `VT_DISCORD=off` disables it. A failed login never takes the core down.
+const discord = createDiscordService(callRuntime)
+void discord.start()
 
 // Loopback only: Nginx/Tailscale front it, never the network directly.
 const server = Bun.serve<SocketData>({
@@ -91,6 +95,7 @@ console.log(
 
 const stop = () => {
   server.stop()
+  void discord.stop()
   // Let an open capture flush into the recorder, then let open summaries finish before the database closes.
   void capture
     .stop()

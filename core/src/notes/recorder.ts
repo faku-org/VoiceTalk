@@ -65,6 +65,13 @@ interface ActiveCall {
   written: Set<string>
 }
 
+/** Distinct real names in order of first appearance, agent last. Empty when nobody has a name. */
+function speakerNames(lines: Line[]): string[] {
+  const names = [...new Set(lines.flatMap((l) => (l.name ? [l.name] : [])))]
+  if (names.length === 0) return []
+  return lines.some((l) => l.speaker === 'agent') ? [...names, 'agente'] : names
+}
+
 const key = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
 
 /**
@@ -184,11 +191,13 @@ export class NotesRecorder {
             : entry.speaker === 'remote'
               ? 'capture'
               : 'stt',
+        speakerName: entry.speakerName ?? null,
       })
       call.lines.push({
         speaker: entry.speaker,
         text,
         label: entry.label ?? null,
+        ...(entry.speakerName ? { name: entry.speakerName } : {}),
       })
     } catch (err) {
       this.#log('could not store an utterance', err)
@@ -216,10 +225,11 @@ export class NotesRecorder {
       // A forced quit must finish fast: no model calls, only the plain summary.
       const online = reason !== 'shutdown'
       if (online) await this.#decide(call)
-      const lines = utterances.list(call.id).map((u) => ({
+      const lines: Line[] = utterances.list(call.id).map((u) => ({
         speaker: u.speaker,
         text: u.text,
         label: u.label,
+        ...(u.speakerName ? { name: u.speakerName } : {}),
       }))
       const draft = await summarize(
         online ? this.#d.llm : null,
@@ -240,6 +250,7 @@ export class NotesRecorder {
           location: call.location,
           speakers,
           source: call.source,
+          names: speakerNames(lines),
         }),
         location: call.location,
         speakers,

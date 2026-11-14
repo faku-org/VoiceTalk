@@ -18,6 +18,7 @@ export interface SessionDetailData extends SessionSummaryRow {
     id: string
     speaker: 'user' | 'agent' | 'remote'
     label: string | null
+    speakerName?: string | null
     text: string
     tStart: number
   }>
@@ -49,7 +50,7 @@ export async function fetchSession(
 ): Promise<SessionDetailData | null> {
   const data = await gql<{ session: SessionDetailData | null }>(
     `query ($id: String!) { session(id: $id) { ${ROW}
-      utterances { id speaker label text tStart }
+      utterances { id speaker label speakerName text tStart }
       summary { summary openQuestions raised }
       externalNotes { id body createdAt location speakers } } }`,
     { id },

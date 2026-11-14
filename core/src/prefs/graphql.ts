@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql'
 import type { Preferences } from './schema.ts'
 import { modelStatuses, type ModelStatus } from './models.ts'
 import { PreferencesError, getPrefsStore } from './store.ts'
+import { discordAvailable, loadDiscordConfig } from '../discord/config.ts'
 
 // Registered from graphql/schema.ts with one call, so the shared schema file
 // only gains an import and a line. The builder generic is erased on purpose:
@@ -79,11 +80,15 @@ export function registerPrefs(builder: AnyBuilder): void {
 
   // Only booleans: key values never reach GraphQL, let alone the webview.
   const KeyStatus = builder
-    .objectRef<{ cartesia: boolean; anthropic: boolean }>('KeyStatus')
+    .objectRef<{ cartesia: boolean; anthropic: boolean; discord: boolean }>(
+      'KeyStatus',
+    )
     .implement({
       fields: (t) => ({
         cartesia: t.exposeBoolean('cartesia'),
         anthropic: t.exposeBoolean('anthropic'),
+        // Bot token set and VT_DISCORD not off.
+        discord: t.exposeBoolean('discord'),
       }),
     })
 
@@ -151,6 +156,7 @@ export function registerPrefs(builder: AnyBuilder): void {
       resolve: () => ({
         cartesia: Boolean(process.env.CARTESIA_API_KEY?.trim()),
         anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+        discord: discordAvailable(loadDiscordConfig()),
       }),
     }),
   }))

@@ -7,6 +7,7 @@ import type { Services } from '../services.ts'
 import { registerPrefs } from '../prefs/graphql.ts'
 import { registerNotes } from '../notes/graphql.ts'
 import { registerCapture } from '../capture/graphql.ts'
+import { registerDiscord } from '../discord/graphql.ts'
 
 interface Health {
   ok: boolean
@@ -77,5 +78,6 @@ registerStorage(builder)
 registerPrefs(builder)
 registerNotes(builder)
 registerCapture(builder)
+registerDiscord(builder)
 
 export const schema = builder.toSchema()

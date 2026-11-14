@@ -7,6 +7,8 @@ export interface Line {
   text: string
   // Name of a remote speaker (the platform of a captured call).
   label?: string | null
+  /** Real name when the session has several speakers (Discord). Replaces the generic label. */
+  name?: string
 }
 
 export const SPEAKER_LABEL = {
@@ -16,7 +18,8 @@ export const SPEAKER_LABEL = {
 } as const
 
 export const lineLabel = (l: Line): string =>
-  l.speaker === 'remote' && l.label ? l.label : SPEAKER_LABEL[l.speaker]
+  l.name ??
+  (l.speaker === 'remote' && l.label ? l.label : SPEAKER_LABEL[l.speaker])
 
 export function formatLines(lines: Line[]): string {
   return lines.map((l) => `${lineLabel(l)}: ${l.text}`).join('\n')

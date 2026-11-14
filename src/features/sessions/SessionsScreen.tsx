@@ -157,13 +157,14 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
               <li
                 key={u.id}
                 className={`max-w-[85%] rounded-panel border border-border px-3.5 py-2 text-body ${
-                  u.speaker === 'user'
+                  // Discord bot sessions name every speaker; only the own mic sits on the right.
+                  u.speaker === 'user' && !u.speakerName
                     ? 'ml-auto bg-surface'
                     : 'mr-auto bg-surface-2'
                 }`}
               >
                 <span className="mb-0.5 flex justify-between gap-4 text-meta text-muted">
-                  <span>{speakerLabel(u.speaker, u.label)}</span>
+                  <span>{speakerLabel(u.speaker, u.speakerName, u.label)}</span>
                   <span className="tabular-nums">
                     {formatOffset(session.startedAt, u.tStart)}
                   </span>

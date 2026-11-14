@@ -13,13 +13,18 @@ export interface TranscriptEntry {
   tEnd?: number
   // Display name of a remote speaker (the platform); unset for user and agent.
   label?: string
+  // Real name of the speaker when the call has several (Discord display name).
+  speakerName?: string
 }
+
+// Where a call comes from. Stored as sessions.source (ADR 0010); new capture sources add values.
+export type CallSource = 'call' | 'discord' | (string & {})
 
 export type CallEndReason = 'client' | 'error' | 'shutdown'
 
 export interface CallEventMap {
-  // `source` is 'call' (default) or the platform key of a captured call.
-  callStarted: { callId: string; t: number; source?: string }
+  // `source` is 'call' (default), 'discord' (bot, ADR 0010) or the platform key of a captured call (ADR 0009).
+  callStarted: { callId: string; t: number; source?: CallSource }
   // Fired once per utterance, when its text is final (agent: when the turn ends or is cut).
   utteranceAdded: { callId: string; entry: TranscriptEntry }
   callEnded: { callId: string; t: number; reason: CallEndReason }
