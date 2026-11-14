@@ -34,14 +34,50 @@ def test_health_reports_loading_then_ready() -> None:
     engine = FakeEngine(ready=False)
     app = create_app(_settings(), engine=engine)
     with TestClient(app) as client:
-        assert client.get("/health").json() == {"ok": True, "stt": "loading"}
+        idle = {"ok": True, "model": "phonon", "pending": None, "error": None}
+        assert client.get("/health").json() == {**idle, "stt": "loading"}
         engine.gate.set()
         deadline = time.monotonic() + 5
         body = client.get("/health").json()
         while body["stt"] != "ready" and time.monotonic() < deadline:
             time.sleep(0.02)
             body = client.get("/health").json()
-        assert body == {"ok": True, "stt": "ready"}
+        assert body == {**idle, "stt": "ready"}
+
+
+def test_stt_models_lists_catalog() -> None:
+    app = create_app(_settings(), engine=FakeEngine())
+    with TestClient(app) as client:
+        body = client.get("/stt/models").json()
+    assert body["current"] == "phonon"
+    assert [m["id"] for m in body["models"]] == ["phonon", "canary", "fluid"]
+    canary = next(m for m in body["models"] if m["id"] == "canary")
+    assert canary["forced_language"] is True
+
+
+def test_stt_model_switches_in_background() -> None:
+    engine = FakeEngine()
+    app = create_app(_settings(), engine=engine)
+    with TestClient(app) as client:
+        assert engine.wait_ready(5)
+        res = client.post("/stt/model", json={"id": "canary"})
+        assert res.status_code == 202
+        deadline = time.monotonic() + 5
+        while engine.model != "canary" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert engine.switched == ["canary"]
+        assert client.get("/health").json()["model"] == "canary"
+
+
+def test_stt_model_rejects_unknown_and_skips_current() -> None:
+    engine = FakeEngine()
+    app = create_app(_settings(), engine=engine)
+    with TestClient(app) as client:
+        assert engine.wait_ready(5)
+        assert client.post("/stt/model", json={"id": "whisper"}).status_code == 422
+        assert client.post("/stt/model", json={"id": "phonon"}).status_code == 202
+        time.sleep(0.05)
+    assert engine.switched == []
 
 
 def test_ws_segments_and_finals(wav: Path) -> None:

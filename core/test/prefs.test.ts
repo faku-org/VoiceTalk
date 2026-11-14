@@ -54,10 +54,15 @@ describe('prefs store', () => {
       folders: ['C:/a', 'C:/a', 'C:/b'],
     })
     const next = store.update({
-      brain: 'claude',
+      brain: { provider: 'claude', effort: 'low' },
       thresholds: { vadSensitivity: 0.7 },
     })
-    expect(next.brain).toBe('claude')
+    // nested brain merges: untouched fields keep their value
+    expect(next.brain).toEqual({
+      ...DEFAULT_PREFERENCES.brain,
+      provider: 'claude',
+      effort: 'low',
+    })
     expect(next.thresholds).toEqual({
       respondConfidence: 0.6,
       vadSensitivity: 0.7,
@@ -68,6 +73,12 @@ describe('prefs store', () => {
     expect(onDisk).toEqual(next)
     // a new store instance reads the same data back
     expect(createPrefsStore(dir).get()).toEqual(next)
+    // a later partial brain patch keeps the other fields
+    expect(store.update({ brain: { style: 'conciso' } }).brain).toMatchObject({
+      provider: 'claude',
+      effort: 'low',
+      style: 'conciso',
+    })
   })
 
   test('rejects invalid values and leaves the file untouched', () => {
@@ -81,6 +92,18 @@ describe('prefs store', () => {
       PreferencesError,
     )
     expect(() => store.update({ brain: 'gpt' })).toThrow(PreferencesError)
+    expect(() => store.update({ brain: { provider: 'gpt' } })).toThrow(
+      PreferencesError,
+    )
+    expect(() => store.update({ brain: { effort: 'max' } })).toThrow(
+      PreferencesError,
+    )
+    expect(() => store.update({ brain: { baseUrl: 'ftp://x' } })).toThrow(
+      PreferencesError,
+    )
+    expect(() =>
+      store.update({ brain: { systemPrompt: 'x'.repeat(2001) } }),
+    ).toThrow(PreferencesError)
     expect(readFileSync(store.path, 'utf8')).toBe(before)
     expect(store.get().theme).toBe('dark')
   })
@@ -100,7 +123,34 @@ describe('prefs store', () => {
     )
     const prefs = createPrefsStore(dir).get()
     expect(prefs.theme).toBe('light')
-    expect(prefs.voiceId).toBe(DEFAULT_PREFERENCES.voiceId)
+    expect(prefs.tts).toEqual(DEFAULT_PREFERENCES.tts)
+  })
+
+  test('legacy string brain in the stored file migrates to the object form', () => {
+    for (const legacy of ['local', 'claude'] as const) {
+      writeFileSync(
+        join(dir, 'preferences.json'),
+        JSON.stringify({ brain: legacy, theme: 'light' }),
+      )
+      const store = createPrefsStore(dir)
+      expect(store.get().brain).toEqual({
+        ...DEFAULT_PREFERENCES.brain,
+        provider: legacy,
+      })
+      expect(store.get().theme).toBe('light')
+      expect(existsSync(`${store.path}.corrupt`)).toBe(false)
+      // the next write persists the object form
+      store.update({ theme: 'dark' })
+      expect(JSON.parse(readFileSync(store.path, 'utf8')).brain.provider).toBe(
+        legacy,
+      )
+    }
+  })
+
+  test('an old client sending the legacy enum on update is migrated, an unknown one is rejected', () => {
+    const store = createPrefsStore(dir)
+    expect(store.update({ brain: 'claude' }).brain.provider).toBe('claude')
+    expect(() => store.update({ brain: 'gpt' })).toThrow(PreferencesError)
   })
 
   test('nativeMic (ADR 0014) is off by default, patches alone and survives a file without it', () => {
@@ -128,6 +178,10 @@ describe('prefs store', () => {
   })
 
   test('has no secret fields', () => {
+    // key material has no place in any nested object either
+    expect(JSON.stringify(DEFAULT_PREFERENCES)).not.toMatch(
+      /apikey|api_key|token|secret/i,
+    )
     expect(Object.keys(DEFAULT_PREFERENCES).join(',')).not.toMatch(
       /key|token|secret/i,
     )
@@ -153,19 +207,32 @@ describe('GraphQL preferences', () => {
   test('query, update, and validation error', async () => {
     setPrefsStore(createPrefsStore(dir))
     const first = await gql(
-      '{ preferences { brain voiceId theme onboarding { version } thresholds { endOfTurnMs } } }',
+      '{ preferences { brain { provider model baseUrl effort style systemPrompt } tts { provider voices { cartesia xai } } theme onboarding { version } thresholds { endOfTurnMs } } }',
     )
     expect(first.data?.preferences).toMatchObject({
-      brain: 'local',
+      brain: {
+        provider: 'local',
+        model: '',
+        baseUrl: '',
+        effort: 'off',
+        style: 'tranquilo',
+        systemPrompt: '',
+      },
       theme: 'system',
       onboarding: null,
     })
 
     const updated = await gql(
-      'mutation($i: PreferencesInput!) { updatePreferences(input: $i) { brain theme location { manual ipGeolocation } folders } }',
+      'mutation($i: PreferencesInput!) { updatePreferences(input: $i) { brain { provider model effort style systemPrompt } theme location { manual ipGeolocation } folders } }',
       {
         i: {
-          brain: 'claude',
+          brain: {
+            provider: 'claude',
+            model: 'claude-sonnet-5-5',
+            effort: 'medium',
+            style: 'detallado',
+            systemPrompt: 'Llámame Faku.',
+          },
           theme: 'dark',
           location: { manual: 'Montevideo' },
           folders: ['D:/notas'],
@@ -174,7 +241,13 @@ describe('GraphQL preferences', () => {
     )
     expect(updated.errors).toBeUndefined()
     expect(updated.data?.updatePreferences).toEqual({
-      brain: 'claude',
+      brain: {
+        provider: 'claude',
+        model: 'claude-sonnet-5-5',
+        effort: 'medium',
+        style: 'detallado',
+        systemPrompt: 'Llámame Faku.',
+      },
       theme: 'dark',
       location: { manual: 'Montevideo', ipGeolocation: false },
       folders: ['D:/notas'],
@@ -186,7 +259,29 @@ describe('GraphQL preferences', () => {
     expect(bad.errors?.[0]?.message).toContain('llmUrl')
     expect(
       JSON.parse(readFileSync(join(dir, 'preferences.json'), 'utf8')).brain,
-    ).toBe('claude')
+    ).toMatchObject({ provider: 'claude', effort: 'medium' })
+
+    // a partial brain input patches only what it names
+    const partial = await gql(
+      'mutation { updatePreferences(input: { brain: { effort: high } }) { brain { provider model effort } } }',
+    )
+    expect(partial.data?.updatePreferences.brain).toEqual({
+      provider: 'claude',
+      model: 'claude-sonnet-5-5',
+      effort: 'high',
+    })
+
+    const badBrain = await gql(
+      'mutation { updatePreferences(input: { brain: { baseUrl: "ftp://x" } }) { brain { baseUrl } } }',
+    )
+    expect(badBrain.errors?.[0]?.message).toContain('brain.baseUrl')
+  })
+
+  test('the old Brain enum is gone: a bare string is a schema error', async () => {
+    const res = await gql(
+      'mutation { updatePreferences(input: { brain: claude }) { theme } }',
+    )
+    expect(res.errors?.length).toBeGreaterThan(0)
   })
 
   test('capture.nativeMic round-trips through GraphQL', async () => {
@@ -205,10 +300,40 @@ describe('GraphQL preferences', () => {
   })
 
   test('keyStatus reports booleans only', async () => {
-    const res = await gql('{ keyStatus { cartesia anthropic } }')
-    expect(typeof res.data?.keyStatus.cartesia).toBe('boolean')
-    expect(typeof res.data?.keyStatus.anthropic).toBe('boolean')
-    expect(JSON.stringify(res)).not.toContain('sk-test-secret')
+    const saved = {
+      a: process.env.ANTHROPIC_API_KEY,
+      o: process.env.OPENAI_API_KEY,
+      x: process.env.XAI_API_KEY,
+      c: process.env.VT_CUSTOM_LLM_KEY,
+    }
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-secret-value'
+    process.env.OPENAI_API_KEY = 'sk-openai-secret-value'
+    delete process.env.XAI_API_KEY
+    delete process.env.VT_CUSTOM_LLM_KEY
+    try {
+      const res = await gql(
+        '{ keyStatus { cartesia anthropic openai xai custom } }',
+      )
+      expect(typeof res.data?.keyStatus.cartesia).toBe('boolean')
+      expect(res.data?.keyStatus).toMatchObject({
+        anthropic: true,
+        openai: true,
+        xai: false,
+        custom: false,
+      })
+      const text = JSON.stringify(res)
+      expect(text).not.toContain('sk-test-secret')
+      expect(text).not.toContain('secret-value')
+    } finally {
+      const restore = (name: string, value: string | undefined): void => {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+      restore('ANTHROPIC_API_KEY', saved.a)
+      restore('OPENAI_API_KEY', saved.o)
+      restore('XAI_API_KEY', saved.x)
+      restore('VT_CUSTOM_LLM_KEY', saved.c)
+    }
   })
 })
 

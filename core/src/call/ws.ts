@@ -1,12 +1,9 @@
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun'
-import {
-  createChatProvider,
-  loadLlmConfig,
-  type ChatProvider,
-} from '../llm/index.ts'
+import type { ChatProvider } from '../llm/index.ts'
 import type { CoreConfig } from '../config.ts'
-import { PersistentCartesiaTts } from '../tts/cartesia-persistent.ts'
+import type { Preferences } from '../prefs/schema.ts'
 import type { TtsProvider } from '../tts/provider.ts'
+import { createLiveProviders, type LiveProvidersOptions } from './live.ts'
 import { CallSession } from './session.ts'
 import { callStore, type CallStore } from './store.ts'
 import { createVoiceConnector, type SttConnector } from './stt-client.ts'
@@ -16,10 +13,14 @@ export const CALL_PATH = '/call'
 export const CALL_MIC_PATH = '/call/mic'
 export const DEFAULT_VOICE_PORT = 8765
 
+// `llm` and `tts` are getters: they re-resolve from the current preferences on every read, so a change
+// applies to the next call/turn (and to capture and Discord, which share this runtime) without a restart.
 export interface CallRuntime {
-  llm: ChatProvider
+  readonly llm: ChatProvider
   // Null when no TTS provider is configured: a call is refused with an explicit message.
-  tts: (TtsProvider & { warm?: () => void }) | null
+  readonly tts: (TtsProvider & { warm?: () => void }) | null
+  // Key variable of the selected TTS provider, for the "not configured" message.
+  readonly ttsKeyEnv: string
   stt: SttConnector
   store: CallStore
   log: (line: string) => void
@@ -31,29 +32,49 @@ export interface CallSocketData {
   feeder?: boolean
 }
 
+export interface CallRuntimeOptions {
+  /** Current preferences; without it the runtime reads env only (VT_BRAIN, VT_LLM_URL). */
+  prefs?: () => Pick<Preferences, 'brain' | 'llmUrl' | 'tts'>
+  makeLlm?: LiveProvidersOptions['makeLlm']
+  makeTts?: LiveProvidersOptions['makeTts']
+}
+
 export function createCallRuntime(
   config: CoreConfig,
   env: Record<string, string | undefined> = process.env,
+  opts: CallRuntimeOptions = {},
 ): CallRuntime {
-  const llmConfig = loadLlmConfig(env)
-  if (llmConfig.warning) console.warn(`[call] ${llmConfig.warning}`)
   const port = Number(env.VT_VOICE_PORT)
   const voicePort =
     Number.isInteger(port) && port > 0 ? port : DEFAULT_VOICE_PORT
-  const llm = createChatProvider(llmConfig)
-  const tts = config.cartesiaApiKey
-    ? new PersistentCartesiaTts({ apiKey: config.cartesiaApiKey })
-    : null
+  const log = (l: string): void => console.log(l)
+  const live = createLiveProviders({
+    env,
+    cartesiaApiKey: config.cartesiaApiKey,
+    xaiApiKey: config.xaiApiKey,
+    prefs: opts.prefs,
+    busy: () => callStore.current !== null,
+    makeLlm: opts.makeLlm,
+    makeTts: opts.makeTts,
+    log,
+  })
   console.log(
-    `[call] brain=${llm.name} voice=:${voicePort} tts=${tts ? tts.name : 'none'}`,
+    `[call] brain=${live.llm.name} voice=:${voicePort} tts=${live.tts ? live.tts.name : 'none'}`,
   )
-  tts?.warm()
+  live.tts?.warm?.()
   return {
-    llm,
-    tts,
+    get llm() {
+      return live.llm
+    },
+    get tts() {
+      return live.tts
+    },
+    get ttsKeyEnv() {
+      return live.ttsKeyEnv
+    },
     stt: createVoiceConnector(voicePort),
     store: callStore,
-    log: (l) => console.log(l),
+    log,
   }
 }
 
@@ -117,7 +138,7 @@ export function createCallSocket(rt: CallRuntime): {
           send(
             JSON.stringify({
               type: 'error',
-              message: 'tts not configured (CARTESIA_API_KEY)',
+              message: `tts not configured (${rt.ttsKeyEnv})`,
             }),
           )
           ws.close(1011, 'tts not configured')

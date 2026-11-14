@@ -12,6 +12,9 @@ dependencies = [
   "torch>=2.8",
   "transformers>=5.22",
   "silero-vad>=5.1",
+  "fermion-research",
+  "sherpa-onnx",
+  "huggingface_hub",
 ]
 
 [project.scripts]

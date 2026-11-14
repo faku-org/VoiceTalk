@@ -26,6 +26,7 @@ function serve() {
   const runtime: CallRuntime = {
     llm: { name: 'fake', async *stream() {} },
     tts: { name: 'fake', async *stream() {} },
+    ttsKeyEnv: 'CARTESIA_API_KEY',
     stt: () => ({
       sendAudio: (f) => sttFrames.push([...f]),
       close: () => {},

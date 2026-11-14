@@ -3,6 +3,7 @@ import { createCore } from './app.ts'
 import {
   CALL_MIC_PATH,
   CALL_PATH,
+  DEFAULT_VOICE_PORT,
   createCallRuntime,
   createCallSocket,
   type CallSocketData,
@@ -14,6 +15,7 @@ import {
 } from './capture/index.ts'
 import { loadConfig } from './config.ts'
 import { getPrefsStore } from './prefs/store.ts'
+import { createSttPusher } from './prefs/stt-push.ts'
 import { createDiscordService } from './discord/index.ts'
 import { createServices } from './services.ts'
 import { VERSION } from './version.ts'
@@ -27,7 +29,19 @@ if (process.env.VT_INGEST?.trim().toLowerCase() !== 'off')
 // Persists calls and runs the decision model; `VT_NOTES=off` leaves the call path unrecorded.
 if (process.env.VT_NOTES?.trim().toLowerCase() !== 'off')
   services.notes.recorder.start()
-const callRuntime = createCallRuntime(config)
+const prefsStore = getPrefsStore()
+const callRuntime = createCallRuntime(config, process.env, {
+  prefs: () => prefsStore.get(),
+})
+// The STT model lives in the voice sidecar; push the stored choice now and on every change (non-fatal).
+const voicePort = Number(process.env.VT_VOICE_PORT)
+createSttPusher({
+  port:
+    Number.isInteger(voicePort) && voicePort > 0
+      ? voicePort
+      : DEFAULT_VOICE_PORT,
+  log: callRuntime.log,
+}).watch(prefsStore)
 const call = createCallSocket(callRuntime)
 // Listen-only capture of other apps' calls (ADR 0009). `VT_CAPTURE=off` refuses it at start.
 const capture = createCaptureSocket({

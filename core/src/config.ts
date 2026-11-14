@@ -1,6 +1,7 @@
 export interface CoreConfig {
   port: number
   cartesiaApiKey: string | undefined
+  xaiApiKey?: string | undefined
 }
 
 const DEFAULT_PORT = 4310
@@ -14,5 +15,10 @@ export function loadConfig(
     throw new Error(`VT_CORE_PORT invalid: ${rawPort}`)
   }
   const key = env.CARTESIA_API_KEY?.trim()
-  return { port, cartesiaApiKey: key ? key : undefined }
+  const xai = env.XAI_API_KEY?.trim()
+  return {
+    port,
+    cartesiaApiKey: key ? key : undefined,
+    xaiApiKey: xai ? xai : undefined,
+  }
 }
