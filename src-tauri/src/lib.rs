@@ -3,9 +3,8 @@ mod sidecar;
 
 use std::path::{Path, PathBuf};
 
-use capture::{
-    capture_list_sources, capture_start, capture_status, capture_stop, CaptureManager,
-};
+use capture::detect_win::{capture_detect_config, DetectManager};
+use capture::{capture_list_sources, capture_start, capture_status, capture_stop, CaptureManager};
 use sidecar::{Status, Supervisor};
 use tauri::{Manager, RunEvent, State};
 
@@ -42,11 +41,15 @@ pub fn run() {
             capture_list_sources,
             capture_start,
             capture_stop,
-            capture_status
+            capture_status,
+            capture_detect_config
         ])
         .setup(|app| {
             app.manage(Supervisor::start(repo_root()));
             app.manage(CaptureManager::default());
+            let detect = DetectManager::default();
+            detect.spawn(app.handle().clone());
+            app.manage(detect);
             Ok(())
         })
         .build(tauri::generate_context!())

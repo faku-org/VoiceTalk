@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import {
   blockText,
+  detectConfig,
   errorText,
   formatClock,
   meterPercent,
+  parseDetected,
+  parseDetectedEnded,
   parseError,
   parseLevels,
   parseSources,
   parseStart,
   parseStop,
   platformLabel,
+  ruleFor,
+  withRule,
 } from './protocol'
 
 describe('capture protocol', () => {
@@ -97,5 +102,65 @@ describe('capture protocol', () => {
     expect(formatClock(7)).toBe('00:07')
     expect(formatClock(723)).toBe('12:03')
     expect(formatClock(3729)).toBe('1:02:09')
+  })
+})
+
+describe('call detection protocol', () => {
+  test('detected payload: valid kept, junk dropped, unknown rule falls back to ask', () => {
+    expect(
+      parseDetected({
+        platform: 'meet',
+        app: 'msedge.exe',
+        pid: 77,
+        rule: 'always',
+      }),
+    ).toEqual({ platform: 'meet', app: 'msedge.exe', pid: 77, rule: 'always' })
+    expect(
+      parseDetected({
+        platform: 'zoom',
+        app: 'Zoom.exe',
+        pid: 5,
+        rule: 'whatever',
+      })?.rule,
+    ).toBe('ask')
+    expect(
+      parseDetected({ platform: 'zoom', app: 'Zoom.exe', pid: 0 }),
+    ).toBeNull()
+    expect(parseDetected({ platform: 1, app: 'x', pid: 3 })).toBeNull()
+    expect(parseDetected(null)).toBeNull()
+  })
+
+  test('ended payload is the pid', () => {
+    expect(parseDetectedEnded({ platform: 'meet', pid: 77 })).toBe(77)
+    expect(parseDetectedEnded({ pid: -1 })).toBeNull()
+    expect(parseDetectedEnded('x')).toBeNull()
+  })
+
+  test('rules: missing means ask, ask drops the entry, setting replaces it', () => {
+    let rules = withRule([], 'zoom', 'never')
+    expect(ruleFor(rules, 'zoom')).toBe('never')
+    expect(ruleFor(rules, 'meet')).toBe('ask')
+    rules = withRule(rules, 'zoom', 'always')
+    expect(rules).toEqual([{ platform: 'zoom', rule: 'always' }])
+    expect(withRule(rules, 'zoom', 'ask')).toEqual([])
+  })
+
+  test('config for the shell: off when capture is off or blocked by the env', () => {
+    const detect = {
+      enabled: true,
+      rules: [{ platform: 'meet', rule: 'never' as const }],
+    }
+    expect(detectConfig({ enabled: true, detect }, null)).toEqual({
+      enabled: true,
+      rules: { meet: 'never' },
+    })
+    expect(detectConfig({ enabled: false, detect }, null).enabled).toBe(false)
+    expect(detectConfig({ enabled: true, detect }, 'env').enabled).toBe(false)
+    expect(
+      detectConfig(
+        { enabled: true, detect: { ...detect, enabled: false } },
+        null,
+      ).enabled,
+    ).toBe(false)
   })
 })

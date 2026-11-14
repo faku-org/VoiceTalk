@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Scale } from 'lucide-react'
-import { SectionTitle, Switch } from '@/app/ui'
+import { Field, SectionTitle, Switch, inputClass } from '@/app/ui'
+import type { DetectRule, DetectRuleEntry } from '@/app/prefsTypes'
+import { PLATFORMS, ruleFor, withRule } from '@/features/capture/protocol'
 import { useLoadedPrefs } from '@/app/prefsContext'
 import { SaveBar } from '../SaveBar'
 import { useAreaSave } from '../useAreaSave'
@@ -10,11 +12,15 @@ export function CaptureArea() {
   const { prefs } = useLoadedPrefs()
   const [enabled, setEnabled] = useState(prefs.capture.enabled)
   const [ack, setAck] = useState(prefs.capture.consentAck)
+  const [detect, setDetect] = useState(prefs.capture.detect.enabled)
+  const [rules, setRules] = useState<DetectRuleEntry[]>(
+    prefs.capture.detect.rules,
+  )
 
   // Turning capture on without reading the notice is the one thing the form refuses.
   const issues = collect([['consent', validateCaptureConsent(enabled, ack)]])
   const { save, state, shownIssues, dirty } = useAreaSave(issues, () => ({
-    capture: { enabled, consentAck: ack },
+    capture: { enabled, consentAck: ack, detect: { enabled: detect, rules } },
   }))
 
   return (
@@ -89,6 +95,55 @@ export function CaptureArea() {
           }}
         />
       </div>
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p id="capture-detect-label" className="text-body-lg font-medium">
+            Preguntar al detectar una llamada
+          </p>
+          <p className="mt-1 text-meta text-muted">
+            Cuando abrís una llamada en otra aplicación, VoiceTalk pregunta si
+            querés que la anote. Nunca graba sin tu confirmación.
+          </p>
+        </div>
+        <Switch
+          checked={detect}
+          labelledBy="capture-detect-label"
+          onChange={(next) => {
+            setDetect(next)
+            dirty()
+          }}
+        />
+      </div>
+
+      {detect && (
+        <fieldset className="space-y-3 rounded-panel border border-border p-4">
+          <legend className="px-1 text-body-lg font-medium">
+            Qué hacer en cada plataforma
+          </legend>
+          {PLATFORMS.filter((p) => p.key !== 'other').map((p) => (
+            <Field
+              key={p.key}
+              label={p.label}
+              htmlFor={`capture-rule-${p.key}`}
+            >
+              <select
+                id={`capture-rule-${p.key}`}
+                className={inputClass}
+                value={ruleFor(rules, p.key)}
+                onChange={(e) => {
+                  setRules(withRule(rules, p.key, e.target.value as DetectRule))
+                  dirty()
+                }}
+              >
+                <option value="ask">Preguntar</option>
+                <option value="always">Anotar siempre</option>
+                <option value="never">No preguntar nunca</option>
+              </select>
+            </Field>
+          ))}
+        </fieldset>
+      )}
 
       <SaveBar issues={shownIssues} state={state} onSave={() => void save()} />
     </form>

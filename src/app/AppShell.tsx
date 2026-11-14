@@ -9,7 +9,12 @@ import {
   Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { CaptureScreen, useCapture } from '@/features/capture'
+import {
+  CaptureScreen,
+  DetectPrompt,
+  useCallDetection,
+  useCapture,
+} from '@/features/capture'
 import type { CaptureApi } from '@/features/capture'
 import { formatClock } from '@/features/capture/protocol'
 import { DiscordScreen, useDiscordStatus } from '@/features/discord'
@@ -88,6 +93,7 @@ function RecordingBar({
 export function AppShell() {
   const [view, setView] = useState<View>('call')
   const capture = useCapture()
+  const detect = useCallDetection(capture)
   const { keyStatus } = usePrefs()
   // Without a bot token the feature is hidden entirely.
   const discordOn = keyStatus?.discord === true
@@ -142,6 +148,11 @@ export function AppShell() {
           )
         })}
       </nav>
+
+      <DetectPrompt
+        detect={detect}
+        onOpenPreferences={() => setView('preferences')}
+      />
 
       <div className="min-w-0 flex-1">
         <RecordingBar capture={capture} onOpen={() => setView('capture')} />

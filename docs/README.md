@@ -26,6 +26,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0008: Sessions, decision model and notes](adr/0008-notes.md)
 - [0009: Call capture](adr/0009-call-capture.md): per-process WASAPI loopback in Rust, `WS /capture`, consent.
 - [0010: Discord voice channels](adr/0010-discord.md): bot library, DAVE, per-user STT, talking gate, transparency.
+- [0016: Call detection](adr/0016-call-detection.md): microphone holder from the consent store, pure state machine, prompt, rules per platform.
 
 ## Design
 

@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql'
-import type { Preferences } from './schema.ts'
+import { DETECT_RULES, type DetectRule, type Preferences } from './schema.ts'
 import { modelStatuses, type ModelStatus } from './models.ts'
 import { PreferencesError, getPrefsStore } from './store.ts'
 import { discordAvailable, loadDiscordConfig } from '../discord/config.ts'
@@ -35,12 +35,46 @@ export function registerPrefs(builder: AnyBuilder): void {
         ipGeolocation: t.exposeBoolean('ipGeolocation'),
       }),
     })
+  const DetectRuleEnum = builder.enumType('DetectRule', {
+    values: DETECT_RULES,
+  })
+  // Rules travel as a list: GraphQL has no map type, and the platform keys are an open set.
+  const DetectRuleEntry = builder
+    .objectRef<{ platform: string; rule: DetectRule }>('DetectRuleEntry')
+    .implement({
+      fields: (t) => ({
+        platform: t.exposeString('platform'),
+        rule: t.field({
+          type: DetectRuleEnum,
+          resolve: (e: { rule: DetectRule }) => e.rule,
+        }),
+      }),
+    })
+  const Detect = builder
+    .objectRef<Preferences['capture']['detect']>('CaptureDetectPreference')
+    .implement({
+      fields: (t) => ({
+        enabled: t.exposeBoolean('enabled'),
+        rules: t.field({
+          type: [DetectRuleEntry],
+          resolve: (d: Preferences['capture']['detect']) =>
+            Object.entries(d.rules).map(([platform, rule]) => ({
+              platform,
+              rule: rule as DetectRule,
+            })),
+        }),
+      }),
+    })
   const Capture = builder
     .objectRef<Preferences['capture']>('CapturePreference')
     .implement({
       fields: (t) => ({
         enabled: t.exposeBoolean('enabled'),
         consentAck: t.exposeBoolean('consentAck'),
+        detect: t.field({
+          type: Detect,
+          resolve: (c: Preferences['capture']) => c.detect,
+        }),
       }),
     })
   const Onboarding = builder
@@ -116,10 +150,23 @@ export function registerPrefs(builder: AnyBuilder): void {
       ipGeolocation: t.boolean(),
     }),
   })
+  const DetectRuleInput = builder.inputType('DetectRuleEntryInput', {
+    fields: (t) => ({
+      platform: t.string({ required: true }),
+      rule: t.field({ type: DetectRuleEnum, required: true }),
+    }),
+  })
+  const DetectInput = builder.inputType('CaptureDetectPreferenceInput', {
+    fields: (t) => ({
+      enabled: t.boolean(),
+      rules: t.field({ type: [DetectRuleInput] }),
+    }),
+  })
   const CaptureInput = builder.inputType('CapturePreferenceInput', {
     fields: (t) => ({
       enabled: t.boolean(),
       consentAck: t.boolean(),
+      detect: t.field({ type: DetectInput }),
     }),
   })
   const OnboardingInput = builder.inputType('OnboardingRecordInput', {
@@ -169,7 +216,7 @@ export function registerPrefs(builder: AnyBuilder): void {
         try {
           // GraphQL gives `null` for explicit nulls; drop them so only sent
           // fields are patched (`onboarding: null` is not a way to reset).
-          return getPrefsStore().update(stripNulls(input))
+          return getPrefsStore().update(rulesToRecord(stripNulls(input)))
         } catch (err) {
           if (err instanceof PreferencesError) {
             throw new GraphQLError(err.message, {
@@ -181,6 +228,20 @@ export function registerPrefs(builder: AnyBuilder): void {
       },
     }),
   }))
+}
+
+/** `capture.detect.rules` arrives as `[{platform, rule}]`; the store keeps a record. */
+function rulesToRecord(input: unknown): unknown {
+  const detect = (input as { capture?: { detect?: { rules?: unknown } } })
+    ?.capture?.detect
+  if (!detect || !Array.isArray(detect.rules)) return input
+  detect.rules = Object.fromEntries(
+    (detect.rules as Array<{ platform: string; rule: string }>).map((e) => [
+      e.platform,
+      e.rule,
+    ]),
+  )
+  return input
 }
 
 function stripNulls(value: unknown): unknown {

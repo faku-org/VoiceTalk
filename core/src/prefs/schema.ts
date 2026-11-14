@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { PLATFORMS, type PlatformKey } from '../capture/platforms.ts'
+
+const PLATFORM_KEYS = Object.keys(PLATFORMS) as [PlatformKey, ...PlatformKey[]]
 
 // Sofía, the default Cartesia voice (ADR 0003 / 0004).
 export const DEFAULT_VOICE_ID = '4663e61a-a9c2-40e1-94c5-c461ed9d3d31'
@@ -36,11 +39,24 @@ const locationShape = z.object({
   ipGeolocation: z.boolean(),
 })
 
+/** What to do when a call of a platform is detected (ADR 0016). */
+export const DETECT_RULES = ['ask', 'always', 'never'] as const
+export type DetectRule = (typeof DETECT_RULES)[number]
+
+const detectShape = z.object({
+  /** Ask when a call in another app is detected. On by default; only matters while capture is enabled. */
+  enabled: z.boolean(),
+  /** Per platform key (see `PLATFORMS`). A missing platform means `ask`. */
+  rules: z.partialRecord(z.enum(PLATFORM_KEYS), z.enum(DETECT_RULES)),
+})
+
 const captureShape = z.object({
   /** Opt-in: allow listening to calls of other apps (ADR 0009). Off by default. */
   enabled: z.boolean(),
   /** The user confirmed the notice that recording others may need their consent. */
   consentAck: z.boolean(),
+  /** Call detection (ADR 0016). */
+  detect: detectShape,
 })
 
 const onboardingShape = z.object({
@@ -70,7 +86,7 @@ export const patchSchema = shape
   .extend({
     thresholds: thresholdsShape.partial(),
     location: locationShape.partial(),
-    capture: captureShape.partial(),
+    capture: captureShape.extend({ detect: detectShape.partial() }).partial(),
   })
   .partial()
 export type PreferencesPatch = z.infer<typeof patchSchema>
@@ -82,7 +98,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   thresholds: { respondConfidence: 0.6, vadSensitivity: 0.5, endOfTurnMs: 700 },
   folders: [],
   location: { manual: '', ipGeolocation: false },
-  capture: { enabled: false, consentAck: false },
+  capture: {
+    enabled: false,
+    consentAck: false,
+    detect: { enabled: true, rules: {} },
+  },
   theme: 'system',
   onboarding: null,
 }
@@ -97,11 +117,17 @@ export function mergePreferences(
       Object.entries(value).filter(([, v]) => v !== undefined),
     ) as Partial<T>
   const { thresholds, location, capture, ...rest } = patch
+  const { detect, ...captureRest } = capture ?? {}
   return {
     ...base,
     ...defined(rest),
     thresholds: { ...base.thresholds, ...defined(thresholds ?? {}) },
     location: { ...base.location, ...defined(location ?? {}) },
-    capture: { ...base.capture, ...defined(capture ?? {}) },
+    capture: {
+      ...base.capture,
+      ...defined(captureRest),
+      // `rules` replaces as a whole, so a rule can go back to the default by leaving it out.
+      detect: { ...base.capture.detect, ...defined(detect ?? {}) },
+    },
   }
 }
