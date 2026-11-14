@@ -4,6 +4,7 @@ import {
   CircleDot,
   Headphones,
   History,
+  MessageCircle,
   MessagesSquare,
   Phone,
   Settings,
@@ -12,6 +13,7 @@ import type { LucideIcon } from 'lucide-react'
 import { CaptureScreen, useCapture } from '@/features/capture'
 import type { CaptureApi } from '@/features/capture'
 import { formatClock } from '@/features/capture/protocol'
+import { ChatScreen } from '@/features/chat'
 import { DiscordScreen, useDiscordStatus } from '@/features/discord'
 import type { DiscordStatusHandle } from '@/features/discord'
 import { PreferencesScreen } from '@/features/preferences/PreferencesScreen'
@@ -20,10 +22,11 @@ import { fadeVariants, transition } from '@/lib/motion'
 import { CallSlot } from './callSlot'
 import { usePrefs } from './prefsContext'
 
-type View = 'call' | 'capture' | 'discord' | 'sessions' | 'preferences'
+type View = 'call' | 'chat' | 'capture' | 'discord' | 'sessions' | 'preferences'
 
 const NAV: ReadonlyArray<{ id: View; label: string; icon: LucideIcon }> = [
   { id: 'call', label: 'Llamada', icon: Phone },
+  { id: 'chat', label: 'Chat', icon: MessageCircle },
   { id: 'capture', label: 'Capturar', icon: Headphones },
   { id: 'discord', label: 'Discord', icon: MessagesSquare },
   { id: 'sessions', label: 'Sesiones', icon: History },
@@ -42,6 +45,8 @@ function ViewBody({
   switch (view) {
     case 'call':
       return <CallSlot />
+    case 'chat':
+      return <ChatScreen />
     case 'capture':
       return <CaptureScreen capture={capture} />
     case 'discord':

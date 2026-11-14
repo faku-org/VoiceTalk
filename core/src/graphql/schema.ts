@@ -8,6 +8,7 @@ import { registerPrefs } from '../prefs/graphql.ts'
 import { registerNotes } from '../notes/graphql.ts'
 import { registerCapture } from '../capture/graphql.ts'
 import { registerDiscord } from '../discord/graphql.ts'
+import { registerChat } from '../chat/graphql.ts'
 
 interface Health {
   ok: boolean
@@ -79,5 +80,6 @@ registerPrefs(builder)
 registerNotes(builder)
 registerCapture(builder)
 registerDiscord(builder)
+registerChat(builder)
 
 export const schema = builder.toSchema()

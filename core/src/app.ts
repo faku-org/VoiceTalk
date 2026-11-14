@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { createYoga } from 'graphql-yoga'
 import { GraphQLError } from 'graphql'
+import { handleChatPreflight, handleChatSend } from './chat/http.ts'
 import type { CoreConfig } from './config.ts'
 import { schema } from './graphql/schema.ts'
 import type { Services } from './services.ts'
@@ -13,7 +14,7 @@ export interface Core {
   setReady(ready: boolean): void
 }
 
-// Elysia shell. Plain HTTP only for health/ready; everything else goes through /graphql.
+// Elysia shell. Plain HTTP only for health/ready and the chat SSE stream; everything else goes through /graphql.
 export function createCore(config: CoreConfig, services?: Services): Core {
   let ready = false
   const yoga = createYoga({
@@ -49,6 +50,8 @@ export function createCore(config: CoreConfig, services?: Services): Core {
       return body
     })
     .all('/graphql', ({ request }) => yoga.fetch(request))
+    .options('/chat/send', ({ request }) => handleChatPreflight(request))
+    .post('/chat/send', ({ request }) => handleChatSend(request, services))
 
   return {
     app,
