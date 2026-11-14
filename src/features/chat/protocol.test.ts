@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   anchorHighlight,
   cleanSelection,
+  mergeLive,
   messageToItem,
   parseSse,
   preview,
@@ -11,6 +12,7 @@ import {
   upsertItem,
   type ChatItem,
 } from './protocol'
+import { isTyped, itemLabel, itemSide, itemStamp } from './view'
 
 const ev = (type: string, payload: object): string =>
   `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`
@@ -180,5 +182,92 @@ describe('timeline helpers', () => {
       null,
       's2',
     ])
+  })
+})
+
+describe('mergeLive', () => {
+  const stored = {
+    ...utt('u1', 100, 'call-1'),
+    text: 'guardado',
+    speaker: 'user' as const,
+  }
+
+  test('keeps the stored line and adds the ones not stored yet as pending', () => {
+    const live = [
+      { id: 'u1', speaker: 'user' as const, text: 'sin corregir', t: 100 },
+      { id: 'u2', speaker: 'agent' as const, text: 'hola', t: 150 },
+    ]
+    const merged = mergeLive([stored], live, 'call-1')
+    expect(merged.map((i) => i.id)).toEqual(['u1', 'u2'])
+    expect(merged[0]?.text).toBe('guardado')
+    expect(merged[0]?.pending).toBeUndefined()
+    expect(merged[1]).toMatchObject({
+      kind: 'utterance',
+      speaker: 'agent',
+      sessionId: 'call-1',
+      pending: true,
+    })
+  })
+
+  test('orders by time against typed turns and skips empty lines', () => {
+    const typed = streamingItem('m1', 120, 'hola Ether')
+    const live = [
+      { id: 'u2', speaker: 'user' as const, text: '  ', t: 90 },
+      { id: 'u3', speaker: 'user' as const, text: 'sigo', t: 130 },
+    ]
+    const merged = mergeLive([stored, typed], live, null)
+    expect(merged.map((i) => i.id)).toEqual(['u1', 'm1', 'u3'])
+  })
+
+  test('returns the same list when there is nothing to add', () => {
+    const items = [stored]
+    expect(mergeLive(items, [], 'call-1')).toBe(items)
+    expect(
+      mergeLive(
+        items,
+        [{ id: 'u1', speaker: 'user', text: 'x', t: 100 }],
+        null,
+      ),
+    ).toBe(items)
+  })
+})
+
+describe('turn helpers', () => {
+  const sessions = new Map([
+    [
+      'call-1',
+      {
+        id: 'call-1',
+        title: null,
+        startedAt: 1000,
+        endedAt: null,
+        source: 'call',
+      },
+    ],
+  ])
+
+  test('labels and sides: own mic right, Ether and named speakers left', () => {
+    const mine = { ...utt('a', 1, 's'), speaker: 'user' as const }
+    const ether = { ...utt('b', 1, 's'), speaker: 'agent' as const }
+    const named = { ...mine, speakerName: 'Ana' }
+    expect([itemLabel(mine), itemSide(mine)]).toEqual(['Tú', 'user'])
+    expect([itemLabel(ether), itemSide(ether)]).toEqual(['Ether', 'other'])
+    expect([itemLabel(named), itemSide(named)]).toEqual(['Ana', 'other'])
+    const typedMine = { ...streamingItem('m', 1, 'x'), role: 'user' as const }
+    expect([
+      itemLabel(typedMine),
+      itemSide(typedMine),
+      isTyped(typedMine),
+    ]).toEqual(['Tú', 'user', true])
+    expect(itemLabel(streamingItem('m', 1, 'x'))).toBe('Ether')
+    expect(isTyped(mine)).toBe(false)
+  })
+
+  test('the stamp is the offset in its call when the call is known', () => {
+    const line = { ...utt('a', 66_000, 'call-1') }
+    expect(itemStamp(line, sessions, null)).toBe('01:05')
+    expect(itemStamp({ ...line, sessionId: null }, sessions, 'call-1')).toBe(
+      '01:05',
+    )
   })
 })

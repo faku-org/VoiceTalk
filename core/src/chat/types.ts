@@ -9,6 +9,8 @@ export interface ChatThread {
   updatedAt: number
   forkedFromThread: string | null
   forkedFromMessage: string | null
+  /** The conversation (session) the thread belongs to. Null: the general thread, which spans recent sessions. */
+  sessionId: string | null
   /** Call transcripts after this instant are not part of the thread (forks). Null: all of them. */
   cutoffAt: number | null
 }

@@ -1,7 +1,8 @@
 -- Chat tab (ADR 0015). Timestamps are epoch milliseconds. Call transcripts are not copied here: the chat reads
 -- `utterances` and merges them with the messages by time.
 --
--- `chat_threads`: the main thread has `forked_from_thread` NULL; a fork keeps where it came from. `cutoff_at` limits
+-- `chat_threads`: the general thread has `session_id` and `forked_from_*` NULL; a session thread (one per conversation)
+-- has `session_id`; a fork keeps where it came from and the `session_id` of its source. `cutoff_at` limits
 -- which call transcripts a fork shows (those up to the message it was forked from); NULL means all of them.
 CREATE TABLE chat_threads (
   id TEXT PRIMARY KEY,
@@ -10,8 +11,13 @@ CREATE TABLE chat_threads (
   updated_at INTEGER NOT NULL,
   forked_from_thread TEXT REFERENCES chat_threads(id) ON DELETE SET NULL,
   forked_from_message TEXT,
-  cutoff_at INTEGER
+  cutoff_at INTEGER,
+  session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE
 );
+
+-- At most one non-fork thread per conversation.
+CREATE UNIQUE INDEX chat_threads_session ON chat_threads(session_id)
+  WHERE session_id IS NOT NULL AND forked_from_message IS NULL;
 
 -- `reply_to_*` points at the message or utterance the user answered; `quote` is the selected text of a follow-up.
 -- `actions` is a JSON array of what the model did in this turn (corrections, highlights, forks): the user sees it.

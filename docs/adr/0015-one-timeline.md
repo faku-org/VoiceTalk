@@ -1,17 +1,45 @@
-# ADR 0015: Chat tab
+# ADR 0015: One timeline for voice and text turns
 
 - Status: accepted (`core/src/chat`, `src/features/chat`). Closes issue #8.
+- Supersedes the first version of this ADR (a separate Chat tab).
 - Date: 2026-11-14
-- Builds on: ADR 0005 (LLM brain), ADR 0006 (storage), ADR 0008 (sessions, utterances and notes).
+- Builds on: ADR 0005 (LLM brain), ADR 0006 (storage), ADR 0008 (sessions, utterances and notes), and the design system
+  (`DESIGN.md`).
 
 ## Context
 
 The call is voice only. The user also needs to talk to the same assistant by text, see what was said in calls next to
-the text conversation, answer a specific message, ask about a passage, fix a bad transcription and continue a topic
+the text conversation (call and chat are one conversation, not two screens), answer a specific message, ask about a passage, fix a bad transcription and continue a topic
 from an earlier call. The assistant, in turn, must be able to point at a passage on screen and branch the
 conversation.
 
 ## Decision
+
+### One timeline, no tab
+
+There is no Chat tab. The same timeline is rendered where the conversation already lives: under the call, and in
+each session detail, each with a composer at the bottom. One `TranscriptTurn` draws every turn, spoken or typed:
+yours on the right on `surface`, Ether's on the left on `bg`, hairline border, `r-card`, at most 85 % wide, `chat`
+font. The speaker line (`Tú` / `Ether` plus the offset in the call) is ui/meta; a typed turn adds a keyboard icon and
+"escrito". The turn still being said or written has a dashed border. The list is `aria-live="polite"`.
+
+Which thread a timeline shows (`useChat(source)`):
+
+- `main`: the root thread (the call view when no call is running).
+- `live`: the thread of the call in progress (`chatLive`, newest active session). Lines the call socket has sent but
+  the recorder has not stored yet are merged in as pending turns (`mergeLive`); the stored copy wins, so corrections
+  show. Polled every 1.5 s.
+- `session`: the thread of one stored conversation (`chatSessionThread`, created on first use).
+
+A session thread is bound to its session (`chat_threads.session_id`, unique among non-fork threads): its timeline is
+that session's utterances plus its own messages, and the model reads that session as its context. A fork of it stays
+bound to the same session.
+
+Actions on text go through a floating `SelectionToolbar` over the selection: Responder, Corregir, Más (Continuar tema,
+Bifurcar, Resaltar). Right click and Shift+F10 open the same items as a menu, on the selection or on the whole turn.
+Esc closes the topmost layer and keeps the selection. It replaces the old "Preguntar sobre esto" popover. Responder
+and Corregir fill the composer (with the reference and the quote); Continuar tema and Resaltar send a fixed request
+with the reference; Bifurcar calls `forkChat` and shows the branch with a way back.
 
 ### One brain, one thread
 
@@ -24,12 +52,14 @@ until its cutoff.
 
 ### Transport
 
-- Reads, forks and undo are GraphQL (`chatMain`, `chatThreads`, `chatTimeline`, `forkChat`, `revertCorrection`).
+- Reads, forks and undo are GraphQL (`chatMain`, `chatLive`, `chatSessionThread`, `chatThreads`, `chatTimeline`,
+  `forkChat`, `revertCorrection`).
 - Sending is `POST /chat/send` answering with SSE (events `user`, `delta`, `action`, `done`, `error`). Plain HTTP is
   the house exception for LLM streams. It has the same origin check as `WS /call`, requires `application/json` (a
   cross-site form cannot send it) and answers 409 while the thread already has a turn running.
 - Closing the connection aborts generation. The partial answer is stored with status `interrupted`.
-- The webview polls the timeline every 4 s while no answer is streaming. No push channel was added for it.
+- The webview polls the timeline (4 s, 1.5 s for the live call) while no answer is streaming. No push channel was
+  added for it.
 
 ### Operations as a text directive
 
@@ -72,8 +102,9 @@ correction or edit shifts text), and drops it when it cannot be placed.
 
 ### Forks
 
-`forkChat(threadId, messageId)` copies the messages up to the fork point into a new thread with new ids
-(`copied_from` keeps the origin), remaps reply and highlight ids, and stores `cutoff_at`. It runs in one transaction.
+`forkChat(threadId, anchorId)` anchors on a message or on a transcript line (so a spoken line can be branched). It
+copies the messages up to the fork point into a new thread with new ids (`copied_from` keeps the origin), remaps reply
+and highlight ids, and stores `cutoff_at`. It runs in one transaction.
 The original thread is untouched. The model can fork by itself (`fork` op); the message then carries an "Abrir
 bifurcación" button.
 
@@ -85,7 +116,7 @@ recalled note.
 
 ## Storage
 
-Migration `0004_chat.sql`: `chat_threads`, `chat_messages`, `chat_highlights`, `utterance_corrections`. Repositories
+Migration `0004_chat.sql`: `chat_threads` (with `session_id`), `chat_messages`, `chat_highlights`, `utterance_corrections`. Repositories
 live behind interfaces (`ThreadRepo`, `MessageRepo`, `HighlightRepo`, `CorrectionRepo`, `TranscriptRepo`) with SQLite
 implementations; `createServices` accepts a `chatLlm` override for tests.
 
@@ -94,7 +125,9 @@ implementations; `createServices` accepts a `chatLlm` override for tests.
 - A correction changes what the chat shows and what the model reads in the chat. Session summaries and notes written
   earlier are not recomputed.
 - Highlights belong to a thread. A fork copies those of the messages it copies, not those of utterances.
-- The timeline is polled, so a line from a live call can take up to 4 s to appear.
+- The live timeline is polled, so a typed turn can take up to 1.5 s to appear in the call view, and at the start of a
+  second call the previous call's thread can show for up to that long.
+- The call socket does not say whether a line is final, so a live line that is also stored shows the stored copy.
 - The directive protocol depends on the model following the format. A malformed directive is shown as rejected; the
   text of the answer is never lost.
 - Not exercised against a real model in this change: tests use a scripted provider.

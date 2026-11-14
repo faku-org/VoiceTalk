@@ -166,6 +166,88 @@ describe('chat storage', () => {
   })
 })
 
+describe('session threads', () => {
+  function secondSession(services: Services): void {
+    const { sessions, utterances } = services.notes
+    sessions.create({ id: 's2', startedAt: 6000, location: 'Salto' })
+    utterances.add({
+      id: 'v1',
+      sessionId: 's2',
+      speaker: 'user',
+      tStart: 6100,
+      tEnd: 6200,
+      text: 'Hablemos del viaje',
+      source: 'stt',
+    })
+  }
+
+  test('a session thread is created once and shows only its own transcript', async () => {
+    const t = setup()
+    seedSession(t.services)
+    secondSession(t.services)
+    const a = t.chat.sessionThread('s1')
+    expect(t.chat.sessionThread('s1').id).toBe(a.id)
+    expect(a.sessionId).toBe('s1')
+    expect(t.chat.mainThread().sessionId).toBeNull()
+    expect(t.chat.mainThread().id).not.toBe(a.id)
+    t.llm.replies = ['Anotado.']
+    await drain(t.chat, a.id, { text: 'hola' })
+    const ids = t.chat.timeline(a.id).items.map((i) => i.id)
+    expect(ids).toContain('u1')
+    expect(ids).not.toContain('v1')
+    // The general thread keeps seeing both sessions but none of the session's messages.
+    const main = t.chat.timeline(t.chat.mainThread().id).items
+    expect(main.map((i) => i.id)).toEqual(expect.arrayContaining(['u1', 'v1']))
+    expect(main.some((i) => i.kind === 'message')).toBe(false)
+    t.done()
+  })
+
+  test('unknown sessions are refused and the live thread follows the open session', () => {
+    const t = setup()
+    expect(() => t.chat.sessionThread('nope')).toThrow(ChatError)
+    expect(t.chat.liveThread()).toBeNull()
+    seedSession(t.services)
+    expect(t.chat.liveThread()).toBeNull()
+    secondSession(t.services)
+    expect(t.chat.liveThread()?.sessionId).toBe('s2')
+    t.done()
+  })
+
+  test('a fork of a session thread stays in that session', async () => {
+    const t = setup()
+    seedSession(t.services)
+    secondSession(t.services)
+    const a = t.chat.sessionThread('s1')
+    t.llm.replies = ['Va.']
+    await drain(t.chat, a.id, { text: 'hola' })
+    const msgs = messagesOf(t.chat, a.id)
+    const fork = t.chat.fork(a.id, msgs.at(-1)!.id)
+    expect(fork.sessionId).toBe('s1')
+    expect(t.chat.sessionThread('s1').id).toBe(a.id)
+    expect(t.chat.timeline(fork.id).items.some((i) => i.id === 'v1')).toBe(
+      false,
+    )
+    t.done()
+  })
+})
+
+describe('fork from a transcript line', () => {
+  test('keeps the messages and lines up to that line', async () => {
+    const t = setup()
+    seedSession(t.services)
+    const main = t.chat.mainThread()
+    t.llm.replies = ['Uno.']
+    await drain(t.chat, main.id, { text: 'hola' })
+    // Messages are stamped by the clock, after the seeded lines: fork at u2 keeps none of them.
+    const fork = t.chat.fork(main.id, 'u2')
+    expect(fork).toMatchObject({ forkedFromMessage: 'u2', cutoffAt: 1300 })
+    const items = t.chat.timeline(fork.id).items
+    expect(items.map((i) => i.id)).toEqual(['u1', 'u2'])
+    expect(() => t.chat.fork(main.id, 'ghost')).toThrow(ChatError)
+    t.done()
+  })
+})
+
 describe('streaming turn', () => {
   test('streams deltas, stores the answer and frees the thread', async () => {
     const t = setup()

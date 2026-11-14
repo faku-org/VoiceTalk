@@ -43,6 +43,7 @@ export function registerChat(builder: Builder): void {
         resolve: (x) => x.forkedFromMessage,
       }),
       cutoffAt: t.float({ nullable: true, resolve: (x) => x.cutoffAt }),
+      sessionId: t.string({ nullable: true, resolve: (x) => x.sessionId }),
     }),
   })
 
@@ -197,6 +198,23 @@ export function registerChat(builder: Builder): void {
     chatMain: t.field({
       type: ThreadType,
       resolve: (_r, _a, ctx) => ctx.services().chat.mainThread(),
+    }),
+    // The thread of one conversation (created on first use) and the one of the conversation in progress.
+    chatSessionThread: t.field({
+      type: ThreadType,
+      args: { sessionId: t.arg.string({ required: true }) },
+      resolve: (_r, args, ctx) => {
+        try {
+          return ctx.services().chat.sessionThread(args.sessionId)
+        } catch (err) {
+          return fail(err)
+        }
+      },
+    }),
+    chatLive: t.field({
+      type: ThreadType,
+      nullable: true,
+      resolve: (_r, _a, ctx) => ctx.services().chat.liveThread(),
     }),
     chatThreads: t.field({
       type: [ThreadType],

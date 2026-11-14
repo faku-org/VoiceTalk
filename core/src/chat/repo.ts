@@ -15,6 +15,8 @@ export interface ThreadRepo {
   get(id: string): ChatThread | null
   /** The thread that is not a fork (oldest first). */
   root(): ChatThread | null
+  /** The thread of a conversation (not a fork), if it exists. */
+  forSession(sessionId: string): ChatThread | null
   list(): ChatThread[]
   touch(id: string, at: number): void
   setTitle(id: string, title: string): void
@@ -56,6 +58,7 @@ interface ThreadDbRow {
   forked_from_thread: string | null
   forked_from_message: string | null
   cutoff_at: number | null
+  session_id: string | null
 }
 
 const toThread = (r: ThreadDbRow): ChatThread => ({
@@ -66,6 +69,7 @@ const toThread = (r: ThreadDbRow): ChatThread => ({
   forkedFromThread: r.forked_from_thread,
   forkedFromMessage: r.forked_from_message,
   cutoffAt: r.cutoff_at,
+  sessionId: r.session_id,
 })
 
 export class SqliteThreadRepo implements ThreadRepo {
@@ -73,8 +77,8 @@ export class SqliteThreadRepo implements ThreadRepo {
 
   create(t: ChatThread): void {
     this.db.run(
-      `INSERT INTO chat_threads (id, title, created_at, updated_at, forked_from_thread, forked_from_message, cutoff_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO chat_threads (id, title, created_at, updated_at, forked_from_thread, forked_from_message, cutoff_at, session_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         t.id,
         t.title,
@@ -83,6 +87,7 @@ export class SqliteThreadRepo implements ThreadRepo {
         t.forkedFromThread,
         t.forkedFromMessage,
         t.cutoffAt,
+        t.sessionId,
       ],
     )
   }
@@ -97,9 +102,18 @@ export class SqliteThreadRepo implements ThreadRepo {
   root(): ChatThread | null {
     const r = this.db
       .query<ThreadDbRow, []>(
-        'SELECT * FROM chat_threads WHERE forked_from_thread IS NULL AND forked_from_message IS NULL ORDER BY created_at, id LIMIT 1',
+        'SELECT * FROM chat_threads WHERE forked_from_thread IS NULL AND forked_from_message IS NULL AND session_id IS NULL ORDER BY created_at, id LIMIT 1',
       )
       .get()
+    return r ? toThread(r) : null
+  }
+
+  forSession(sessionId: string): ChatThread | null {
+    const r = this.db
+      .query<ThreadDbRow, [string]>(
+        'SELECT * FROM chat_threads WHERE session_id = ? AND forked_from_message IS NULL LIMIT 1',
+      )
+      .get(sessionId)
     return r ? toThread(r) : null
   }
 
@@ -358,6 +372,8 @@ export interface TranscriptRepo {
   get(id: string): UtteranceRow | null
   /** Utterances of the most recent sessions, oldest first. `until` drops anything that started after it (forks). */
   recent(opts: { sessions: number; until: number | null }): UtteranceRow[]
+  /** Every line of one conversation up to `until`, oldest first. */
+  forSession(sessionId: string, until: number | null): UtteranceRow[]
   /** Utterances whose text contains any of the terms, newest first. */
   find(terms: string[], limit: number, until: number | null): UtteranceRow[]
 }
@@ -409,6 +425,15 @@ export class SqliteTranscriptRepo implements TranscriptRepo {
          ORDER BY u.t_start, u.rowid`,
       )
       .all(opts.sessions, until)
+      .map(toUtterance)
+  }
+
+  forSession(sessionId: string, until: number | null): UtteranceRow[] {
+    return this.db
+      .query<UtteranceDbRow, [string, number]>(
+        'SELECT * FROM utterances WHERE session_id = ?1 AND t_start <= ?2 ORDER BY t_start, rowid',
+      )
+      .all(sessionId, until ?? Number.MAX_SAFE_INTEGER)
       .map(toUtterance)
   }
 

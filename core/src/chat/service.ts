@@ -139,10 +139,41 @@ export class ChatService {
       updatedAt: at,
       forkedFromThread: null,
       forkedFromMessage: null,
+      sessionId: null,
       cutoffAt: null,
     }
     this.d.threads.create(thread)
     return thread
+  }
+
+  /** The thread of one conversation, created on first use. */
+  sessionThread(sessionId: string): ChatThread {
+    const found = this.d.threads.forSession(sessionId)
+    if (found) return found
+    const session = this.d.sessions.get(sessionId)
+    if (!session)
+      throw new ChatError('not_found', 'Esa conversación ya no existe.')
+    const at = this.now()
+    const thread: ChatThread = {
+      id: this.newId(),
+      title: session.title?.trim() || 'Conversación',
+      createdAt: at,
+      updatedAt: at,
+      forkedFromThread: null,
+      forkedFromMessage: null,
+      sessionId,
+      cutoffAt: null,
+    }
+    this.d.threads.create(thread)
+    return thread
+  }
+
+  /** The thread of the conversation in progress (the newest one still open), or null when none is. */
+  liveThread(): ChatThread | null {
+    const open = this.d.sessions
+      .listActive()
+      .sort((a, b) => b.startedAt - a.startedAt)[0]
+    return open ? this.sessionThread(open.id) : null
   }
 
   listThreads(): ChatThread[] {
@@ -225,10 +256,12 @@ export class ChatService {
     const messages = this.d.messages
       .list(thread.id)
       .map((m) => this.messageItem(m))
-    const raw = this.d.transcripts.recent({
-      sessions: ROOT_SESSIONS,
-      until: thread.cutoffAt,
-    })
+    const raw = thread.sessionId
+      ? this.d.transcripts.forSession(thread.sessionId, thread.cutoffAt)
+      : this.d.transcripts.recent({
+          sessions: ROOT_SESSIONS,
+          until: thread.cutoffAt,
+        })
     const fixes = this.d.corrections.activeFor(raw.map((u) => u.id))
     const utterances = raw.map((u) => this.utteranceItem(u, fixes.get(u.id)))
     const all: TimelineItem[] = [...utterances, ...messages]
@@ -652,19 +685,30 @@ export class ChatService {
     const source = this.thread(threadId)
     const all = this.d.messages.list(threadId)
     const at = all.findIndex((m) => m.id === messageId)
-    if (at < 0)
-      throw new ChatError(
-        'not_found',
-        'Ese mensaje no está en la conversación.',
-      )
-    const upTo = all.slice(0, at + 1)
-    const last = upTo[upTo.length - 1]
-    if (!last)
-      throw new ChatError(
-        'not_found',
-        'Ese mensaje no está en la conversación.',
-      )
-    const label = oneLine(last.text).slice(0, 40)
+    const missing = () =>
+      new ChatError('not_found', 'Ese mensaje no está en la conversación.')
+    let upTo: ChatMessageRow[]
+    let anchorAt: number
+    let anchorText: string
+    if (at >= 0) {
+      upTo = all.slice(0, at + 1)
+      const last = upTo[upTo.length - 1]
+      if (!last) throw missing()
+      anchorAt = last.createdAt
+      anchorText = last.text
+    } else {
+      // A line of the call transcript is a fork point too: the fork keeps what was said up to it.
+      const line = this.effectiveUtterance(messageId)
+      const inThread =
+        line &&
+        (!source.sessionId || line.sessionId === source.sessionId) &&
+        line.at <= (source.cutoffAt ?? Number.MAX_SAFE_INTEGER)
+      if (!line || !inThread) throw missing()
+      anchorAt = line.at
+      anchorText = line.text
+      upTo = all.filter((m) => m.createdAt <= anchorAt)
+    }
+    const label = oneLine(anchorText).slice(0, 40)
     const now = this.now()
     const thread: ChatThread = {
       id: this.newId(),
@@ -673,7 +717,8 @@ export class ChatService {
       updatedAt: now,
       forkedFromThread: source.id,
       forkedFromMessage: messageId,
-      cutoffAt: last.createdAt,
+      sessionId: source.sessionId,
+      cutoffAt: anchorAt,
     }
     const tx = this.d.db.transaction(() => {
       this.d.threads.create(thread)
@@ -719,7 +764,7 @@ export class ChatService {
         if (!newTarget) continue
         if (h.targetKind === 'utterance') {
           const u = this.d.transcripts.get(h.targetId)
-          if (!u || u.tStart > last.createdAt) continue
+          if (!u || u.tStart > anchorAt) continue
         }
         this.d.highlights.add({
           ...h,

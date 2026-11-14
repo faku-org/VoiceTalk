@@ -1,4 +1,4 @@
-// Pure helpers of the chat tab: wire types, SSE parsing, highlight anchoring, selection -> range. No DOM, no React.
+// Pure helpers of the shared timeline (voice and text turns): wire types, SSE parsing, highlight anchoring, selection -> range. No DOM, no React.
 
 export type TargetKind = 'message' | 'utterance'
 
@@ -9,6 +9,7 @@ export interface ChatThread {
   updatedAt: number
   forkedFromThread: string | null
   forkedFromMessage: string | null
+  sessionId: string | null
   cutoffAt: number | null
 }
 
@@ -52,6 +53,8 @@ export interface ChatItem {
   speakerName: string | null
   originalText: string | null
   corrected: boolean
+  /** The turn being spoken or written right now: it has no stored copy yet. */
+  pending?: boolean
 }
 
 export interface ChatHighlight {
@@ -90,6 +93,8 @@ export interface ComposerTarget {
   text: string
   /** Selected fragment (follow-up from a selection). */
   quote: string | null
+  /** Why the composer points here: a plain reply or a correction the user is about to write. */
+  intent?: 'reply' | 'correct'
 }
 
 // --- SSE -----------------------------------------------------------------------------------------------------------
@@ -308,4 +313,52 @@ export function sessionHeaderFor(
       return prev.sessionId === it.sessionId ? null : it.sessionId
   }
   return it.sessionId
+}
+
+// --- Live call ------------------------------------------------------------------------------------------------------
+
+/** A line of the call as the call socket sends it, before it is stored. */
+export interface LiveEntry {
+  id: string
+  speaker: 'user' | 'agent'
+  text: string
+  t: number
+}
+
+/**
+ * Puts the lines of the call in progress into the stored timeline. The stored copy wins (it carries corrections);
+ * a line that is not stored yet shows as the turn in progress.
+ */
+export function mergeLive(
+  items: ChatItem[],
+  live: ReadonlyArray<LiveEntry>,
+  sessionId: string | null,
+): ChatItem[] {
+  if (live.length === 0) return items
+  const stored = new Set(
+    items.filter((i) => i.kind === 'utterance').map((i) => i.id),
+  )
+  const extra: ChatItem[] = live
+    .filter((e) => !stored.has(e.id) && e.text.trim() !== '')
+    .map((e) => ({
+      kind: 'utterance',
+      id: e.id,
+      at: e.t,
+      text: e.text,
+      role: null,
+      status: null,
+      replyTo: null,
+      quote: null,
+      actions: [],
+      sessionId,
+      speaker: e.speaker,
+      label: null,
+      speakerName: null,
+      originalText: null,
+      corrected: false,
+      pending: true,
+    }))
+  return extra.length === 0
+    ? items
+    : [...items, ...extra].sort((a, b) => a.at - b.at)
 }

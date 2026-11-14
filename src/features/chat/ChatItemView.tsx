@@ -14,11 +14,10 @@ import {
   type ChatAction,
   type ChatHighlight,
   type ChatItem,
-  type ChatThread,
+  type ChatSession,
 } from './protocol'
-import { focusRing, itemLabel } from './view'
-
-const smallButton = `inline-flex h-8 items-center gap-1.5 rounded-control px-2 text-meta font-medium text-muted transition-colors duration-(--dur-fast) hover:bg-surface-2 hover:text-text ${focusRing}`
+import { TranscriptTurn } from './TranscriptTurn'
+import { focusRing, isTyped, itemLabel, itemSide, itemStamp } from './view'
 
 /** Text with the model's highlights as marks; they are re-anchored by their quote when the text changed. */
 function Marked({
@@ -37,7 +36,7 @@ function Marked({
             key={i}
             data-highlight={s.highlightId}
             title={notes.get(s.highlightId) ?? 'Resaltado por el asistente'}
-            className="rounded-sm bg-accent/20 px-0.5 text-inherit"
+            className="rounded-sm bg-highlight px-0.5 text-inherit"
           >
             {s.text}
           </mark>
@@ -52,23 +51,21 @@ function Marked({
 function ActionChips({
   actions,
   items,
-  threads,
   onUndo,
-  onOpenThread,
+  onOpenFork,
   onJump,
 }: {
   actions: ChatAction[]
   items: ChatItem[]
-  threads: ChatThread[]
   onUndo: (utteranceId: string) => void
-  onOpenThread: (id: string) => void
+  onOpenFork: (id: string) => void
   onJump: (itemId: string) => void
 }) {
   if (actions.length === 0) return null
   return (
     <ul className="mt-2 space-y-1.5">
       {actions.map((a, i) => (
-        <li key={i} className="text-meta text-muted">
+        <li key={i} className="meta text-muted">
           {a.type === 'correction' && a.utteranceId && (
             <CorrectionChip
               action={a}
@@ -89,15 +86,13 @@ function ActionChips({
                 Nueva conversación
                 {a.title ? ` «${a.title}»` : ''}.
               </span>
-              {threads.some((t) => t.id === a.threadId) && (
-                <button
-                  type="button"
-                  onClick={() => onOpenThread(a.threadId!)}
-                  className={`font-medium text-accent underline ${focusRing}`}
-                >
-                  Abrir bifurcación
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => onOpenFork(a.threadId!)}
+                className={`font-medium text-accent underline ${focusRing}`}
+              >
+                Abrir bifurcación
+              </button>
             </span>
           )}
           {a.type === 'resume' && (
@@ -177,147 +172,108 @@ export function ChatItemView({
   item,
   items,
   highlights,
-  threads,
-  onReply,
-  onFork,
+  sessions,
+  threadSessionId,
   onUndo,
-  onOpenThread,
+  onOpenFork,
   onJump,
 }: {
   item: ChatItem
   items: ChatItem[]
   highlights: ChatHighlight[]
-  threads: ChatThread[]
-  onReply: (item: ChatItem) => void
-  onFork: (messageId: string) => void
+  sessions: ReadonlyMap<string, ChatSession>
+  threadSessionId: string | null
   onUndo: (utteranceId: string) => void
-  onOpenThread: (id: string) => void
+  onOpenFork: (id: string) => void
   onJump: (itemId: string) => void
 }) {
   const [showOriginal, setShowOriginal] = useState(false)
-  const label = itemLabel(item)
+  const common = {
+    id: item.id,
+    side: itemSide(item),
+    speaker: itemLabel(item),
+    stamp: itemStamp(item, sessions, threadSessionId),
+    typed: isTyped(item),
+    pending: item.pending === true,
+  }
 
   if (item.kind === 'utterance') {
     return (
-      <li
-        id={`chat-item-${item.id}`}
-        tabIndex={-1}
-        className="group rounded-control px-3 py-2 text-body focus-visible:outline-2 focus-visible:outline-accent"
-      >
-        <div className="flex items-baseline gap-2">
-          <span className="text-meta font-medium text-muted">{label}</span>
-          {item.corrected && (
+      <TranscriptTurn {...common}>
+        <p
+          data-target-kind="utterance"
+          data-target-id={item.id}
+          className="whitespace-pre-wrap text-text"
+        >
+          <Marked text={item.text} highlights={highlights} />
+        </p>
+        {item.corrected && (
+          <p className="meta mt-1 text-muted">
             <button
               type="button"
               aria-expanded={showOriginal}
               onClick={() => setShowOriginal((v) => !v)}
-              className={`text-meta text-muted underline ${focusRing}`}
+              className={`underline ${focusRing}`}
             >
               Corregido
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onReply(item)}
-            className={`${smallButton} ml-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`}
-          >
-            <CornerUpLeft className="size-3.5" aria-hidden="true" />
-            Responder
-          </button>
-        </div>
-        <p
-          data-target-kind="utterance"
-          data-target-id={item.id}
-          className="mt-0.5 whitespace-pre-wrap text-text"
-        >
-          <Marked text={item.text} highlights={highlights} />
-        </p>
-        {item.corrected && showOriginal && item.originalText && (
-          <p className="mt-1 text-meta text-muted">
-            Original: {item.originalText}
+            {showOriginal && item.originalText && (
+              <span> · Original: {item.originalText}</span>
+            )}
           </p>
         )}
-      </li>
+      </TranscriptTurn>
     )
   }
 
-  const mine = item.role === 'user'
   return (
-    <li
-      id={`chat-item-${item.id}`}
-      tabIndex={-1}
-      className={`group flex flex-col ${mine ? 'items-end' : 'items-start'}`}
-    >
-      <div
-        className={`max-w-[min(42rem,92%)] rounded-panel px-4 py-3 text-body-lg ${
-          mine ? 'bg-accent/10 text-text' : 'bg-surface-2 text-text'
-        }`}
-      >
-        <p className="mb-1 text-meta font-medium text-muted">{label}</p>
-        {item.replyTo && (
-          <p className="mb-2 flex items-start gap-1.5 text-meta text-muted">
-            <CornerUpLeft
-              className="mt-0.5 size-3.5 shrink-0"
-              aria-hidden="true"
-            />
-            <span>
-              {item.replyTo.label}: {preview(item.replyTo.text, 140)}
-            </span>
-          </p>
-        )}
-        {item.quote && (
-          <blockquote className="mb-2 text-meta text-muted">
-            «{preview(item.quote, 200)}»
-          </blockquote>
-        )}
-        <p
-          data-target-kind="message"
-          data-target-id={item.id}
-          className="whitespace-pre-wrap"
-        >
-          <Marked text={item.text} highlights={highlights} />
+    <TranscriptTurn {...common}>
+      {item.replyTo && (
+        <p className="meta mb-2 flex items-start gap-1.5 text-muted">
+          <CornerUpLeft
+            className="mt-0.5 size-3.5 shrink-0"
+            aria-hidden="true"
+          />
+          <span>
+            {item.replyTo.label}: {preview(item.replyTo.text, 140)}
+          </span>
         </p>
-        {item.status === 'interrupted' && (
-          <p className="mt-1 flex items-center gap-1.5 text-meta text-muted">
-            <History className="size-3.5" aria-hidden="true" />
-            Respuesta interrumpida.
-          </p>
+      )}
+      {item.quote && (
+        <blockquote className="meta mb-2 text-muted">
+          «{preview(item.quote, 200)}»
+        </blockquote>
+      )}
+      <p
+        data-target-kind="message"
+        data-target-id={item.id}
+        className="whitespace-pre-wrap text-text"
+      >
+        {item.pending && item.text === '' ? (
+          <span className="text-muted">Escribiendo…</span>
+        ) : (
+          <Marked text={item.text} highlights={highlights} />
         )}
-        {item.status === 'error' && (
-          <p className="mt-1 flex items-center gap-1.5 text-meta text-danger">
-            <CircleAlert className="size-3.5" aria-hidden="true" />
-            No se pudo completar la respuesta.
-          </p>
-        )}
-        <ActionChips
-          actions={item.actions}
-          items={items}
-          threads={threads}
-          onUndo={onUndo}
-          onOpenThread={onOpenThread}
-          onJump={onJump}
-        />
-      </div>
-      <div className="mt-1 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-        <button
-          type="button"
-          onClick={() => onReply(item)}
-          className={smallButton}
-        >
-          <CornerUpLeft className="size-3.5" aria-hidden="true" />
-          Responder
-        </button>
-        {item.status === 'done' && (
-          <button
-            type="button"
-            onClick={() => onFork(item.id)}
-            className={smallButton}
-          >
-            <GitBranch className="size-3.5" aria-hidden="true" />
-            Bifurcar desde aquí
-          </button>
-        )}
-      </div>
-    </li>
+      </p>
+      {item.status === 'interrupted' && (
+        <p className="meta mt-1 flex items-center gap-1.5 text-muted">
+          <History className="size-3.5" aria-hidden="true" />
+          Respuesta interrumpida.
+        </p>
+      )}
+      {item.status === 'error' && (
+        <p className="meta mt-1 flex items-center gap-1.5 text-danger">
+          <CircleAlert className="size-3.5" aria-hidden="true" />
+          No se pudo completar la respuesta.
+        </p>
+      )}
+      <ActionChips
+        actions={item.actions}
+        items={items}
+        onUndo={onUndo}
+        onOpenFork={onOpenFork}
+        onJump={onJump}
+      />
+    </TranscriptTurn>
   )
 }

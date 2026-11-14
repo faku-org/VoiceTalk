@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  fetchLiveThread,
   fetchMainThread,
-  fetchThreads,
+  fetchSessionThread,
   fetchTimeline,
   forkThread,
   revertCorrection,
@@ -19,6 +20,14 @@ import {
 } from './protocol'
 
 const POLL_MS = 4000
+/** The call in progress is stored line by line; poll faster so a typed turn lands next to the spoken ones. */
+const LIVE_POLL_MS = 1500
+
+/** Where a timeline comes from: the main thread, the call in progress, or one stored conversation. */
+export type ChatSource =
+  | { kind: 'main' }
+  | { kind: 'live' }
+  | { kind: 'session'; id: string }
 
 /** The answer being streamed: text so far and the operations the model has already run. */
 export interface Draft {
@@ -29,15 +38,40 @@ export interface Draft {
 const message = (err: unknown) =>
   err instanceof Error ? err.message : 'No se pudo conectar con el núcleo.'
 
-export function useChat() {
-  const [threads, setThreads] = useState<ChatThread[]>([])
-  const [threadId, setThreadId] = useState<string | null>(null)
-  const [timeline, setTimeline] = useState<ChatTimeline | null>(null)
+const sourceKey = (s: ChatSource) =>
+  s.kind === 'session' ? `session:${s.id}` : s.kind
+
+async function resolveRoot(source: ChatSource): Promise<ChatThread | null> {
+  if (source.kind === 'live') return fetchLiveThread()
+  if (source.kind === 'session') return fetchSessionThread(source.id)
+  return fetchMainThread()
+}
+
+/**
+ * One conversation timeline. A source has a root thread; forking a line opens a branch of it, which stays
+ * selected for that source until `leaveFork`. Everything is keyed by source so switching never shows stale lines.
+ */
+export function useChat(source: ChatSource) {
+  const key = sourceKey(source)
+  const [root, setRoot] = useState<{ key: string; id: string | null } | null>(
+    null,
+  )
+  const [forked, setForked] = useState<{ key: string; id: string } | null>(null)
+  const [loaded, setLoaded] = useState<{
+    threadId: string
+    data: ChatTimeline
+  } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [target, setTarget] = useState<ComposerTarget | null>(null)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const forkId = forked?.key === key ? forked.id : null
+  const rootId = root?.key === key ? root.id : null
+  const threadId = forkId ?? rootId
+  const timeline = loaded?.threadId === threadId ? loaded.data : null
   const sending = draft !== null
+
   // Mirrors of state for callbacks and timers that must see the latest value.
   const sendingRef = useRef(false)
   const threadRef = useRef<string | null>(null)
@@ -47,71 +81,58 @@ export function useChat() {
   }, [sending, threadId])
 
   const reload = useCallback(async (id: string) => {
-    const next = await fetchTimeline(id)
+    const data = await fetchTimeline(id)
     // The thread may have changed while the request was in flight.
-    if (threadRef.current === id) setTimeline(next)
+    if (threadRef.current === id) setLoaded({ threadId: id, data })
   }, [])
 
-  // First load: the main thread and the thread list.
+  // Resolve the root (the live call can change under us) and poll its timeline while no answer is streaming.
+  const kind = source.kind
+  const sessionId = source.kind === 'session' ? source.id : null
   useEffect(() => {
     let cancelled = false
-    void (async () => {
-      try {
-        const [main, all] = await Promise.all([
-          fetchMainThread(),
-          fetchThreads(),
-        ])
-        if (cancelled) return
-        setThreads(all)
-        setThreadId(main.id)
-      } catch (err) {
-        if (!cancelled) setError(message(err))
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Timeline of the active thread, polled while no answer is streaming (new call lines show up by themselves).
-  useEffect(() => {
-    if (!threadId) return
-    let cancelled = false
+    const src: ChatSource =
+      kind === 'session' && sessionId
+        ? { kind: 'session', id: sessionId }
+        : { kind: kind === 'live' ? 'live' : 'main' }
     const tick = async () => {
       if (sendingRef.current) return
       try {
-        const next = await fetchTimeline(threadId)
+        let id = forkId
+        if (!id) {
+          const thread = await resolveRoot(src)
+          if (cancelled) return
+          setRoot({ key, id: thread?.id ?? null })
+          id = thread?.id ?? null
+        }
+        if (!id) return
+        const data = await fetchTimeline(id)
         if (cancelled || sendingRef.current) return
-        setTimeline(next)
+        setLoaded({ threadId: id, data })
         setError(null)
       } catch (err) {
         if (!cancelled) setError(message(err))
       }
     }
     void tick()
-    const id = window.setInterval(() => void tick(), POLL_MS)
+    const timer = window.setInterval(
+      () => void tick(),
+      kind === 'live' ? LIVE_POLL_MS : POLL_MS,
+    )
     return () => {
       cancelled = true
-      window.clearInterval(id)
+      window.clearInterval(timer)
     }
-  }, [threadId])
-
-  const refreshThreads = useCallback(async () => {
-    try {
-      setThreads(await fetchThreads())
-    } catch {
-      // The list refreshes on the next action.
-    }
-  }, [])
+  }, [key, kind, sessionId, forkId])
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, override?: ComposerTarget | null) => {
       const id = threadRef.current
       const body = text.trim()
       if (!id || !body || sendingRef.current) return false
       const ctl = new AbortController()
       abortRef.current = ctl
-      const sent = target
+      const sent = override === undefined ? target : override
       let refused = false
       // Closes the gap until the next render: a second Enter must not start another turn.
       sendingRef.current = true
@@ -130,13 +151,19 @@ export function useChat() {
             if (threadRef.current !== id) return
             switch (ev.type) {
               case 'user':
-                setTimeline((t) =>
-                  t
+                setLoaded((l) =>
+                  l && l.threadId === id
                     ? {
-                        ...t,
-                        items: upsertItem(t.items, messageToItem(ev.message)),
+                        ...l,
+                        data: {
+                          ...l.data,
+                          items: upsertItem(
+                            l.data.items,
+                            messageToItem(ev.message),
+                          ),
+                        },
                       }
-                    : t,
+                    : l,
                 )
                 break
               case 'delta':
@@ -153,13 +180,19 @@ export function useChat() {
                 )
                 break
               case 'done':
-                setTimeline((t) =>
-                  t
+                setLoaded((l) =>
+                  l && l.threadId === id
                     ? {
-                        ...t,
-                        items: upsertItem(t.items, messageToItem(ev.message)),
+                        ...l,
+                        data: {
+                          ...l.data,
+                          items: upsertItem(
+                            l.data.items,
+                            messageToItem(ev.message),
+                          ),
+                        },
                       }
-                    : t,
+                    : l,
                 )
                 break
               case 'error':
@@ -188,14 +221,13 @@ export function useChat() {
         setDraft(null)
         try {
           await reload(id)
-          await refreshThreads()
         } catch {
           // The poll recovers it.
         }
       }
       return !refused
     },
-    [target, reload, refreshThreads],
+    [target, reload],
   )
 
   const stop = useCallback(() => abortRef.current?.abort(), [])
@@ -214,36 +246,39 @@ export function useChat() {
     [reload],
   )
 
+  /** Branches the thread at a line (a message or a transcript line) and shows the branch. */
   const fork = useCallback(
-    async (messageId: string, title?: string) => {
+    async (anchorId: string, title?: string) => {
       const id = threadRef.current
-      if (!id) return
+      if (!id || sendingRef.current) return
       try {
-        const created = await forkThread(id, messageId, title)
-        await refreshThreads()
+        const created = await forkThread(id, anchorId, title)
         setTarget(null)
-        setTimeline(null)
-        setThreadId(created.id)
+        setForked({ key, id: created.id })
       } catch (err) {
         setError(message(err))
       }
     },
-    [refreshThreads],
+    [key],
   )
 
-  const openThread = useCallback(
-    async (id: string) => {
+  /** Opens a branch the model created. */
+  const openFork = useCallback(
+    (id: string) => {
       if (sendingRef.current) return
       setTarget(null)
-      setTimeline(null)
-      setThreadId(id)
-      await refreshThreads()
+      setForked({ key, id })
     },
-    [refreshThreads],
+    [key],
   )
 
+  const leaveFork = useCallback(() => {
+    if (sendingRef.current) return
+    setTarget(null)
+    setForked(null)
+  }, [])
+
   return {
-    threads,
     threadId,
     timeline,
     draft,
@@ -255,7 +290,9 @@ export function useChat() {
     stop,
     undoCorrection,
     fork,
-    openThread,
+    openFork,
+    leaveFork,
+    forked: forkId !== null,
   }
 }
 

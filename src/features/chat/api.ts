@@ -8,7 +8,7 @@ import {
 } from './protocol'
 
 const THREAD_FIELDS =
-  'id title createdAt updatedAt forkedFromThread forkedFromMessage cutoffAt'
+  'id title createdAt updatedAt forkedFromThread forkedFromMessage sessionId cutoffAt'
 const ITEM_FIELDS = `kind id at text role status quote sessionId speaker label speakerName originalText corrected
   replyTo { kind id label text }
   actions { type op reason utteranceId original corrected highlightId targetKind targetId quoted threadId title query utteranceIds }`
@@ -20,11 +20,23 @@ export async function fetchMainThread(): Promise<ChatThread> {
   return data.chatMain
 }
 
-export async function fetchThreads(): Promise<ChatThread[]> {
-  const data = await gql<{ chatThreads: ChatThread[] }>(
-    `{ chatThreads { ${THREAD_FIELDS} } }`,
+/** The thread of one stored conversation (created on first use). */
+export async function fetchSessionThread(
+  sessionId: string,
+): Promise<ChatThread> {
+  const data = await gql<{ chatSessionThread: ChatThread }>(
+    `query($sessionId: String!) { chatSessionThread(sessionId: $sessionId) { ${THREAD_FIELDS} } }`,
+    { sessionId },
   )
-  return data.chatThreads
+  return data.chatSessionThread
+}
+
+/** The thread of the call in progress, or null when there is none. */
+export async function fetchLiveThread(): Promise<ChatThread | null> {
+  const data = await gql<{ chatLive: ChatThread | null }>(
+    `{ chatLive { ${THREAD_FIELDS} } }`,
+  )
+  return data.chatLive
 }
 
 export async function fetchTimeline(threadId: string): Promise<ChatTimeline> {

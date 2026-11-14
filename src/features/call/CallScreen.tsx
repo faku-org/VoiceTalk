@@ -1,5 +1,6 @@
 import { CircleAlert, LoaderCircle, Mic, PhoneOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { CallConversation } from '@/features/chat'
 import { useCall } from './use-call'
 import type { CallState } from './protocol'
 
@@ -96,34 +97,8 @@ export function CallScreen({ corePort }: { corePort: number | null }) {
         </p>
       )}
 
-      <div
-        className="mt-4 space-y-3"
-        aria-live="polite"
-        aria-label="Transcripción"
-      >
-        {view.transcript.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-hairline p-5 text-sm text-text-muted">
-            {inCall
-              ? 'Habla cuando quieras. La transcripción aparecerá aquí.'
-              : 'Inicia una llamada para conversar por voz. El audio se procesa en este equipo; la voz del asistente se genera en la nube.'}
-          </p>
-        ) : (
-          view.transcript.map((entry) => (
-            <p
-              key={entry.id}
-              className={`chat max-w-[85%] rounded-card border border-border px-4 py-2.5 ${
-                entry.speaker === 'user'
-                  ? 'ml-auto bg-surface'
-                  : 'mr-auto bg-canvas'
-              }`}
-            >
-              <span className="mb-0.5 block font-sans text-meta text-muted">
-                {entry.speaker === 'user' ? 'Tú' : 'Asistente'}
-              </span>
-              {entry.text}
-            </p>
-          ))
-        )}
+      <div className="mt-4">
+        <CallConversation inCall={inCall} live={view.transcript} />
       </div>
 
       {view.latency && (
