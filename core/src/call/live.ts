@@ -1,7 +1,8 @@
 import {
+  brainConfigKey,
   createChatProvider,
   loadLlmConfig,
-  normalizeBaseUrl,
+  resolveBrainConfig,
   type LlmConfig,
 } from '../llm/config.ts'
 import type { ChatMessage, ChatOptions, ChatProvider } from '../llm/provider.ts'
@@ -50,9 +51,9 @@ export interface LiveProviders {
 }
 
 /**
- * LLM and TTS that follow the preferences. Instances are cached by (brain, llmUrl) and by
- * (provider, voiceId), so a change applies on the next read (next call or next turn) without a restart. A replaced TTS is
- * closed only once no call is active, so a swap never cuts an utterance in flight.
+ * LLM and TTS that follow the preferences. The LLM is cached by the full brain config (`brainConfigKey`),
+ * the TTS by (provider, voiceId), so a change applies on the next read (next call or next turn) without a
+ * restart. A replaced TTS is closed only once no call is active, so a swap never cuts an utterance in flight.
  */
 export function createLiveProviders(opts: LiveProvidersOptions): LiveProviders {
   const makeLlm = opts.makeLlm ?? createChatProvider
@@ -81,31 +82,21 @@ export function createLiveProviders(opts: LiveProvidersOptions): LiveProviders {
 
   function currentLlm(): ChatProvider {
     const prefs = readPrefs()
-    let cfg: LlmConfig = envConfig
-    if (prefs) {
-      let brain = prefs.brain
-      let warning: string | undefined
-      if (brain === 'claude' && !envConfig.anthropicApiKey) {
-        brain = 'local'
-        warning =
-          'brain=claude but ANTHROPIC_API_KEY is not set; using the local brain'
-      }
-      cfg = {
-        ...envConfig,
-        brain,
-        llmUrl: normalizeBaseUrl(prefs.llmUrl),
-        warning,
-      }
-    }
+    const cfg: LlmConfig = prefs
+      ? resolveBrainConfig(prefs.brain, prefs.llmUrl, opts.env)
+      : envConfig
     if (cfg.warning && !warned.has(cfg.warning)) {
       warned.add(cfg.warning)
       log(`[call] ${cfg.warning}`)
     }
-    const key = `${cfg.brain}|${cfg.llmUrl}`
+    // Full config: a change to the model, effort, style or prompt also rebuilds the provider.
+    const key = brainConfigKey(cfg)
     if (llmCached === null || key !== llmKey) {
       llmCached = makeLlm(cfg)
       llmKey = key
-      log(`[call] brain=${llmCached.name} url=${cfg.llmUrl}`)
+      log(
+        `[call] brain=${llmCached.name} model=${cfg.model ?? 'default'} effort=${cfg.effort} style=${cfg.style} url=${cfg.baseUrl || 'sdk'}`,
+      )
     }
     return llmCached
   }

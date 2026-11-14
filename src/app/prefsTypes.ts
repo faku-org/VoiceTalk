@@ -1,4 +1,22 @@
-export type Brain = 'local' | 'claude'
+export type BrainProvider =
+  | 'local'
+  | 'ollama'
+  | 'claude'
+  | 'openai'
+  | 'xai'
+  | 'custom'
+export type BrainEffort = 'off' | 'low' | 'medium' | 'high'
+export type BrainStyle = 'tranquilo' | 'conciso' | 'detallado'
+export interface Brain {
+  provider: BrainProvider
+  /** Empty = the preset's default model. */
+  model: string
+  /** Empty = the preset's default endpoint. */
+  baseUrl: string
+  effort: BrainEffort
+  style: BrainStyle
+  systemPrompt: string
+}
 export type SttModel = 'phonon' | 'canary' | 'fluid'
 export type TtsProvider = 'cartesia' | 'xai'
 export type TtsVoices = Record<TtsProvider, string>
@@ -29,7 +47,7 @@ export interface Preferences {
 
 /** Same shape, every field optional (nested objects too). */
 export interface PreferencesPatch {
-  brain?: Brain
+  brain?: Partial<Brain>
   stt?: SttModel
   llmUrl?: string
   tts?: { provider?: TtsProvider; voices?: Partial<TtsVoices> }
@@ -43,8 +61,11 @@ export interface PreferencesPatch {
 
 export interface KeyStatus {
   cartesia: boolean
-  xai: boolean
   anthropic: boolean
+  openai: boolean
+  xai: boolean
+  /** Optional key of the custom endpoint. */
+  custom: boolean
   discord: boolean
 }
 
@@ -68,7 +89,8 @@ export interface ModelStatus {
 }
 
 export const PREFS_FIELDS = `
-  brain stt llmUrl folders theme
+  brain { provider model baseUrl effort style systemPrompt }
+  stt llmUrl folders theme
   tts { provider voices { cartesia xai } }
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }

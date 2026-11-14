@@ -5,6 +5,13 @@ import {
   TTS_PROVIDERS,
   defaultTtsVoices,
 } from '../tts/catalog.ts'
+import {
+  DEFAULT_BRAIN,
+  EFFORTS,
+  PROVIDERS,
+  STYLES,
+  SYSTEM_PROMPT_MAX,
+} from '../llm/presets.ts'
 
 // Sofía, the default Cartesia voice (ADR 0003 / 0004). Kept as the migration target of the legacy `voiceId`.
 export const DEFAULT_VOICE_ID = TTS_CATALOG.cartesia.defaultVoice
@@ -70,8 +77,20 @@ const onboardingShape = z.object({
   completedAt: z.iso.datetime(),
 })
 
+const brainShape = z.object({
+  provider: z.enum(PROVIDERS),
+  /** Model id. Empty = the preset default. */
+  model: z.string().trim().max(120),
+  /** Endpoint for Ollama and custom. Empty = the preset default (local uses `llmUrl`). */
+  baseUrl: z.union([z.literal(''), httpUrl]),
+  effort: z.enum(EFFORTS),
+  style: z.enum(STYLES),
+  /** Extra instructions appended to the persona. */
+  systemPrompt: z.string().max(SYSTEM_PROMPT_MAX),
+})
+
 const shape = z.object({
-  brain: z.enum(['local', 'claude']),
+  brain: brainShape,
   llmUrl: httpUrl,
   tts: ttsShape,
   stt: z.enum(STT_MODELS),
@@ -91,6 +110,7 @@ export type Preferences = z.infer<typeof shape>
 
 export const patchSchema = shape
   .extend({
+    brain: brainShape.partial(),
     thresholds: thresholdsShape.partial(),
     location: locationShape.partial(),
     capture: captureShape.partial(),
@@ -100,7 +120,7 @@ export const patchSchema = shape
 export type PreferencesPatch = z.infer<typeof patchSchema>
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  brain: 'local',
+  brain: DEFAULT_BRAIN,
   llmUrl: DEFAULT_LLM_URL,
   tts: { provider: DEFAULT_TTS_PROVIDER, voices: defaultTtsVoices() },
   stt: DEFAULT_STT,
@@ -121,11 +141,12 @@ export function mergePreferences(
     Object.fromEntries(
       Object.entries(value).filter(([, v]) => v !== undefined),
     ) as Partial<T>
-  const { thresholds, location, capture, tts, ...rest } = patch
+  const { brain, thresholds, location, capture, tts, ...rest } = patch
   const { voices, ...ttsRest } = tts ?? {}
   return {
     ...base,
     ...defined(rest),
+    brain: { ...base.brain, ...defined(brain ?? {}) },
     thresholds: { ...base.thresholds, ...defined(thresholds ?? {}) },
     location: { ...base.location, ...defined(location ?? {}) },
     capture: { ...base.capture, ...defined(capture ?? {}) },
@@ -138,13 +159,21 @@ export function mergePreferences(
 }
 
 /**
- * Pre-0.12 files and patches carry a flat `voiceId` (always a Cartesia voice). It moves to
- * `tts.voices.cartesia`; an explicit `tts.voices.cartesia` wins. Anything else passes through.
+ * Upgrades old files and old clients to the current shape. Applied to stored files and to every patch:
+ * - before v0.11 `brain` was the string `'local'` or `'claude'` → `{ provider }`;
+ * - before v0.12 a flat `voiceId` (always a Cartesia voice) → `tts.voices.cartesia`, where an explicit
+ *   `tts.voices.cartesia` wins and a blank `voiceId` is dropped.
+ * Anything else passes through for the schema to accept or reject.
  */
 export function migrateLegacyPreferences(raw: unknown): unknown {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw
-  if (!('voiceId' in raw)) return raw
-  const { voiceId, ...rest } = raw as Record<string, unknown>
+  let next = raw as Record<string, unknown>
+  const { brain } = next
+  if (brain === 'local' || brain === 'claude') {
+    next = { ...next, brain: { provider: brain } }
+  }
+  if (!('voiceId' in next)) return next
+  const { voiceId, ...rest } = next
   if (typeof voiceId !== 'string' || voiceId.trim() === '') return rest
   const tts = (
     typeof rest.tts === 'object' && rest.tts !== null ? rest.tts : {}
