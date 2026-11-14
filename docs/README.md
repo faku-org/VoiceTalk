@@ -29,9 +29,14 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0011: User-selectable models](adr/0011-model-selection.md): Phonon-2.5 default STT, Canary/Fluid options, prefs applied to the runtime.
 - [0012: Brain presets](adr/0012-brain-presets.md): providers, thinking effort per provider, styles, custom system prompt, `brain` migration.
 
+## Design
+
+- [Design brief](design/brief.md): what the app is, screens, Ether, tokens, open questions. Input for the design system.
+
 ## Fixes batches
 
 - [2026-11-14 (v0.10.0)](fixes-2026-11-14-v0.10.0/README.md): Phonon default STT, model selection, prefs applied to the runtime.
+- [2026-11-14 (v0.9.1)](fixes-2026-11-14-v0.9.1/README.md): system audio cancellation, `</think>` leak, Ether in the call.
 - [2026-11-14 (v0.6.0)](fixes-2026-11-14-v0.6.0/README.md): brain providers, voice providers, chat tab, dashboard, generative UI, CUA. Roadmap: [project 6](https://github.com/orgs/faku-org/projects/6).
 
 ## Spikes
