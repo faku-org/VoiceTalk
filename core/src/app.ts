@@ -1,7 +1,9 @@
 import { Elysia } from 'elysia'
 import { createYoga } from 'graphql-yoga'
+import { GraphQLError } from 'graphql'
 import type { CoreConfig } from './config.ts'
 import { schema } from './graphql/schema.ts'
+import type { Services } from './services.ts'
 
 export interface Core {
   app: {
@@ -12,13 +14,19 @@ export interface Core {
 }
 
 // Elysia shell. Plain HTTP only for health/ready; everything else goes through /graphql.
-export function createCore(config: CoreConfig): Core {
+export function createCore(config: CoreConfig, services?: Services): Core {
   let ready = false
   const yoga = createYoga({
     schema,
     graphqlEndpoint: '/graphql',
     graphiql: process.env.NODE_ENV !== 'production',
     landingPage: false,
+    context: () => ({
+      services: () => {
+        if (!services) throw new GraphQLError('Storage is not configured')
+        return services
+      },
+    }),
   })
 
   const app = new Elysia()

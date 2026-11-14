@@ -17,7 +17,8 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    // Off: @wefaber/codemode-sandbox-quickjs ships .ts sources with parameter properties, which tsc checks as ours.
+    "erasableSyntaxOnly": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src", "test", "scripts"]

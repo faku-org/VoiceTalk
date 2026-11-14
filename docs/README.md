@@ -17,6 +17,7 @@ Dev: `bun run tauri:dev`. Each sidecar also runs alone: `bun core/src/index.ts`,
 - [0002: Audio WebSocket outside GraphQL](adr/0002-audio-websocket.md)
 - [0003: Voice stack and the LFM text side](adr/0003-voice-stack.md): Phase 0 spike, latency numbers, model choices.
 - [0004: Cartesia cloud TTS](adr/0004-cartesia-cloud-tts.md)
+- [0006: Storage, ingest/RAG and read-only Code Mode](adr/0006-storage-ingest-codemode.md)
 
 ## Spikes
 
