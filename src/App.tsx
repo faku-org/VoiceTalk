@@ -9,6 +9,7 @@ import {
   Server,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { CallScreen } from '@/features/call'
 import {
   parseStatus,
   type SidecarInfo,
@@ -163,6 +164,10 @@ export default function App() {
             {error}
           </p>
         )}
+
+        <CallScreen
+          corePort={status?.core.state === 'healthy' ? status.core.port : null}
+        />
       </div>
     </main>
   )

@@ -1,7 +1,7 @@
 //! Supervision of the two sidecars: core (Bun) and voice (Python/uv).
 //!
 //! Contract (shared with the core and voice sessions, see docs/adr/0001-processes-and-sidecars.md):
-//! - core:  `bun core/src/index.ts`, env `VT_CORE_PORT`, `GET /health` -> 200.
+//! - core:  `bun core/src/index.ts`, env `VT_CORE_PORT` and `VT_VOICE_PORT`, `GET /health` -> 200.
 //! - voice: `uv run --project voice voicetalk-voice --port <N>`, `GET /health` -> 200.
 //! - Both run with cwd = repo root and bind 127.0.0.1 only.
 //!
@@ -110,7 +110,7 @@ impl Supervisor {
             repo_root,
         };
 
-        match spawn_core(&toolchain, core_port) {
+        match spawn_core(&toolchain, core_port, voice_port) {
             Ok(child) => watch(Arc::clone(&core), "core", child, core_port),
             Err(reason) => mark_down(&core, "core", reason),
         }
@@ -215,7 +215,7 @@ fn uv_candidates() -> Vec<PathBuf> {
     out
 }
 
-fn spawn_core(tc: &Toolchain, port: u16) -> Result<Child, String> {
+fn spawn_core(tc: &Toolchain, port: u16, voice_port: u16) -> Result<Child, String> {
     let bun = tc.bun.as_ref().map_err(Clone::clone)?;
     let entry = tc.repo_root.join("core").join("src").join("index.ts");
     if !entry.is_file() {
@@ -224,7 +224,8 @@ fn spawn_core(tc: &Toolchain, port: u16) -> Result<Child, String> {
     let mut cmd = Command::new(bun);
     cmd.arg("core/src/index.ts")
         .current_dir(&tc.repo_root)
-        .env("VT_CORE_PORT", port.to_string());
+        .env("VT_CORE_PORT", port.to_string())
+        .env("VT_VOICE_PORT", voice_port.to_string());
     launch("core", cmd)
 }
 
