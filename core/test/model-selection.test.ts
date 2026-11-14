@@ -45,7 +45,11 @@ describe('stt preference schema', () => {
     )
     const store = createPrefsStore(dir)
     expect(store.get().stt).toBe('phonon')
-    expect(store.get().brain).toBe('claude')
+    // legacy string brain is migrated to the object form
+    expect(store.get().brain).toEqual({
+      ...DEFAULT_PREFERENCES.brain,
+      provider: 'claude',
+    })
     store.update({ stt: 'fluid' })
     expect(createPrefsStore(dir).get().stt).toBe('fluid')
   })
@@ -244,12 +248,12 @@ describe('stt push to the voice sidecar', () => {
 
 describe('runtime follows preferences', () => {
   const fakeLlm = (cfg: LlmConfig): ChatProvider => ({
-    name: `${cfg.brain}@${cfg.llmUrl}`,
+    name: `${cfg.provider}@${cfg.baseUrl || cfg.llmUrl}`,
     async *stream() {},
   })
   function fakeTtsFactory() {
     const made: Array<WarmableTts & { voice: string; closed: boolean }> = []
-    const make = (_key: string, voice: string) => {
+    const make = (_provider: string, _key: string, voice: string) => {
       const t = {
         name: 'fake',
         voice,
@@ -276,7 +280,7 @@ describe('runtime follows preferences', () => {
       {
         prefs: () => store.get(),
         makeLlm: (cfg) => {
-          llmBuilt.push(`${cfg.brain}|${cfg.llmUrl}`)
+          llmBuilt.push(`${cfg.provider}|${cfg.baseUrl || cfg.llmUrl}`)
           return fakeLlm(cfg)
         },
         makeTts: make,
@@ -288,13 +292,16 @@ describe('runtime follows preferences', () => {
     expect(rt.llm).toBe(llm1)
     const tts1 = rt.tts as (typeof made)[number]
     expect(rt.tts).toBe(tts1)
-    expect(tts1.voice).toBe(DEFAULT_PREFERENCES.voiceId)
+    expect(tts1.voice).toBe(DEFAULT_PREFERENCES.tts.voices.cartesia)
 
-    store.update({ brain: 'claude', llmUrl: 'http://10.0.0.5:9000/v1' })
+    store.update({
+      brain: { provider: 'claude' },
+      llmUrl: 'http://10.0.0.5:9000/v1',
+    })
     expect(rt.llm.name).toBe('claude@http://10.0.0.5:9000')
     expect(rt.llm).not.toBe(llm1)
 
-    store.update({ voiceId: 'voice-2' })
+    store.update({ tts: { voices: { cartesia: 'voice-2' } } })
     const tts2 = rt.tts as (typeof made)[number]
     expect(tts2).not.toBe(tts1)
     expect(tts2.voice).toBe('voice-2')
@@ -320,12 +327,56 @@ describe('runtime follows preferences', () => {
     const live = createLiveProviders({
       env: {},
       cartesiaApiKey: undefined,
-      prefs: () => ({ ...DEFAULT_PREFERENCES, brain: 'claude' }),
+      prefs: () => ({
+        ...DEFAULT_PREFERENCES,
+        brain: { ...DEFAULT_PREFERENCES.brain, provider: 'claude' },
+      }),
       makeLlm: fakeLlm,
       log: (l) => logs.push(l),
     })
     expect(live.llm.name.startsWith('local@')).toBe(true)
     expect(logs.some((l) => l.includes('ANTHROPIC_API_KEY'))).toBe(true)
+  })
+
+  test('the provider cache key is the full brain config', () => {
+    const store = createPrefsStore(dir)
+    const built: string[] = []
+    const live = createLiveProviders({
+      env: { OPENAI_API_KEY: 'k' },
+      cartesiaApiKey: undefined,
+      prefs: () => store.get(),
+      makeLlm: (cfg) => {
+        built.push(
+          [
+            cfg.provider,
+            cfg.model,
+            cfg.effort,
+            cfg.style,
+            cfg.systemPrompt,
+          ].join('|'),
+        )
+        return fakeLlm(cfg)
+      },
+    })
+    const read = (): string => live.llm.name
+    read()
+    read()
+    expect(built).toEqual(['local||off|tranquilo|'])
+    // every field that changes what is sent rebuilds the provider, once per change
+    const steps = [
+      { provider: 'openai' as const },
+      { model: 'gpt-5' },
+      { effort: 'high' as const },
+      { style: 'conciso' as const },
+      { systemPrompt: 'Habla de usted.' },
+    ]
+    for (const [i, brain] of steps.entries()) {
+      store.update({ brain })
+      read()
+      read()
+      expect(built.length).toBe(i + 2)
+    }
+    expect(built.at(-1)).toBe('openai|gpt-5|high|conciso|Habla de usted.')
   })
 
   test('a replaced tts closes only after the grace period and once no call is active', () => {
@@ -336,7 +387,13 @@ describe('runtime follows preferences', () => {
     const live = createLiveProviders({
       env: {},
       cartesiaApiKey: 'k',
-      prefs: () => ({ ...DEFAULT_PREFERENCES, voiceId: voice }),
+      prefs: () => ({
+        ...DEFAULT_PREFERENCES,
+        tts: {
+          ...DEFAULT_PREFERENCES.tts,
+          voices: { ...DEFAULT_PREFERENCES.tts.voices, cartesia: voice },
+        },
+      }),
       busy: () => busy,
       makeTts: make,
       graceMs: 1000,

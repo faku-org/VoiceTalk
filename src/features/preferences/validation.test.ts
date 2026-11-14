@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
   collect,
+  validateBrainEndpoint,
+  validateBrainModel,
   validateCaptureConsent,
   validateEndOfTurn,
+  validateSystemPrompt,
   validateLlmUrl,
   validateLocation,
   validateUnit,
@@ -10,6 +13,18 @@ import {
 } from './validation'
 
 describe('validation', () => {
+  test('brain endpoint: empty only when optional', () => {
+    expect(validateBrainEndpoint('', false)).toBeNull()
+    expect(validateBrainEndpoint('  ', true)).not.toBeNull()
+    expect(validateBrainEndpoint('http://10.0.0.5:1234', true)).toBeNull()
+    expect(validateBrainEndpoint('ftp://x', false)).toContain('http')
+  })
+  test('brain model and system prompt limits', () => {
+    expect(validateBrainModel('gpt-5-mini')).toBeNull()
+    expect(validateBrainModel('x'.repeat(121))).not.toBeNull()
+    expect(validateSystemPrompt('x'.repeat(2000), 2000)).toBeNull()
+    expect(validateSystemPrompt('x'.repeat(2001), 2000)).not.toBeNull()
+  })
   test('llm url', () => {
     expect(validateLlmUrl('http://127.0.0.1:8080/v1')).toBeNull()
     expect(validateLlmUrl('https://api.example.com')).toBeNull()

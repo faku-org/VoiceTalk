@@ -17,6 +17,8 @@ export interface CallRuntime {
   readonly llm: ChatProvider
   // Null when no TTS provider is configured: a call is refused with an explicit message.
   readonly tts: (TtsProvider & { warm?: () => void }) | null
+  // Key variable of the selected TTS provider, for the "not configured" message.
+  readonly ttsKeyEnv: string
   stt: SttConnector
   store: CallStore
   log: (line: string) => void
@@ -28,7 +30,7 @@ export interface CallSocketData {
 
 export interface CallRuntimeOptions {
   /** Current preferences; without it the runtime reads env only (VT_BRAIN, VT_LLM_URL). */
-  prefs?: () => Pick<Preferences, 'brain' | 'llmUrl' | 'voiceId'>
+  prefs?: () => Pick<Preferences, 'brain' | 'llmUrl' | 'tts'>
   makeLlm?: LiveProvidersOptions['makeLlm']
   makeTts?: LiveProvidersOptions['makeTts']
 }
@@ -45,6 +47,7 @@ export function createCallRuntime(
   const live = createLiveProviders({
     env,
     cartesiaApiKey: config.cartesiaApiKey,
+    xaiApiKey: config.xaiApiKey,
     prefs: opts.prefs,
     busy: () => callStore.current !== null,
     makeLlm: opts.makeLlm,
@@ -61,6 +64,9 @@ export function createCallRuntime(
     },
     get tts() {
       return live.tts
+    },
+    get ttsKeyEnv() {
+      return live.ttsKeyEnv
     },
     stt: createVoiceConnector(voicePort),
     store: callStore,
@@ -106,7 +112,7 @@ export function createCallSocket(rt: CallRuntime): {
           send(
             JSON.stringify({
               type: 'error',
-              message: 'tts not configured (CARTESIA_API_KEY)',
+              message: `tts not configured (${rt.ttsKeyEnv})`,
             }),
           )
           ws.close(1011, 'tts not configured')

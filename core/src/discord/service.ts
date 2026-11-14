@@ -158,7 +158,9 @@ export class DiscordService {
       throw new DiscordError('VoiceTalk ya está en una llamada de Discord')
     const talk = opts.talk ?? false
     if (talk && !this.#d.tts)
-      throw new DiscordError('Para hablar falta CARTESIA_API_KEY')
+      throw new DiscordError(
+        'Para hablar falta la clave de voz (por ejemplo CARTESIA_API_KEY)',
+      )
     const guild = gw.guilds().find((g) => g.id === target.guildId)
     const channel = guild?.voiceChannels.find((c) => c.id === target.channelId)
     if (!guild || !channel)
@@ -230,7 +232,9 @@ export class DiscordService {
     const a = this.#active
     if (!a) throw new DiscordError('No hay una llamada de Discord activa')
     if (talk && !this.#d.tts)
-      throw new DiscordError('Para hablar falta CARTESIA_API_KEY')
+      throw new DiscordError(
+        'Para hablar falta la clave de voz (por ejemplo CARTESIA_API_KEY)',
+      )
     if (a.answerer.talk !== talk) {
       a.answerer.talk = talk
       if (!talk) a.answerer.interrupt()
