@@ -53,6 +53,7 @@ interface ActiveCall {
   id: string
   startedAt: number
   location: string
+  source: string
   /** Transcript kept in memory for the model; the database copy is the durable one. */
   lines: Line[]
   /** First line the decision model has not seen yet. */
@@ -60,6 +61,13 @@ interface ActiveCall {
   timer: ReturnType<typeof setInterval>
   ticking: Promise<void> | null
   written: Set<string>
+}
+
+/** Distinct real names in order of first appearance, agent last. Empty when nobody has a name. */
+function speakerNames(lines: Line[]): string[] {
+  const names = [...new Set(lines.flatMap((l) => (l.name ? [l.name] : [])))]
+  if (names.length === 0) return []
+  return lines.some((l) => l.speaker === 'agent') ? [...names, 'agente'] : names
 }
 
 const key = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -102,7 +110,7 @@ export class NotesRecorder {
     this.recoverInterrupted()
     const e = this.#d.events
     this.#off = [
-      e.on('callStarted', (p) => this.#onStarted(p.callId, p.t)),
+      e.on('callStarted', (p) => this.#onStarted(p.callId, p.t, p.source)),
       e.on('utteranceAdded', (p) => this.#onUtterance(p.callId, p.entry)),
       e.on('callEnded', (p) => this.#onEnded(p.callId, p.t, p.reason)),
     ]
@@ -136,14 +144,20 @@ export class NotesRecorder {
     return p
   }
 
-  #onStarted(callId: string, t: number): void {
+  #onStarted(callId: string, t: number, source: string = 'call'): void {
     try {
       const location = this.#prefs.location
-      this.#d.sessions.create({ id: callId, startedAt: t, location })
+      this.#d.sessions.create({
+        id: callId,
+        startedAt: t,
+        location,
+        source,
+      })
       const call: ActiveCall = {
         id: callId,
         startedAt: t,
         location,
+        source,
         lines: [],
         cursor: 0,
         ticking: null,
@@ -174,8 +188,13 @@ export class NotesRecorder {
         tEnd: this.#now(),
         text,
         source: entry.speaker === 'agent' ? 'agent' : 'stt',
+        speakerName: entry.speakerName ?? null,
       })
-      call.lines.push({ speaker: entry.speaker, text })
+      call.lines.push({
+        speaker: entry.speaker,
+        text,
+        ...(entry.speakerName ? { name: entry.speakerName } : {}),
+      })
     } catch (err) {
       this.#log('could not store an utterance', err)
     }
@@ -202,9 +221,10 @@ export class NotesRecorder {
       // A forced quit must finish fast: no model calls, only the plain summary.
       const online = reason !== 'shutdown'
       if (online) await this.#decide(call)
-      const lines = utterances.list(call.id).map((u) => ({
+      const lines: Line[] = utterances.list(call.id).map((u) => ({
         speaker: u.speaker,
         text: u.text,
+        ...(u.speakerName ? { name: u.speakerName } : {}),
       }))
       const draft = await summarize(online ? this.#d.llm : null, lines)
       this.#d.summaries.save({ sessionId: call.id, ...draft })
@@ -220,6 +240,7 @@ export class NotesRecorder {
           startedAt: call.startedAt,
           location: call.location,
           speakers,
+          names: speakerNames(lines),
         }),
         location: call.location,
         speakers,

@@ -9,6 +9,8 @@ export interface Session {
   location: string
   title: string | null
   status: SessionStatus
+  /** Where the session came from: call (the app's own mic), discord, ... (ADR 0010). */
+  source: string
 }
 
 export interface UtteranceRow {
@@ -19,6 +21,8 @@ export interface UtteranceRow {
   tEnd: number
   text: string
   source: 'stt' | 'agent'
+  /** Real name of the speaker in a multi-speaker session (Discord display name). */
+  speakerName?: string | null
 }
 
 export interface Note {

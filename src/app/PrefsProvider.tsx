@@ -11,7 +11,7 @@ import {
   type PreferencesPatch,
 } from './prefsTypes'
 
-const LOAD_QUERY = `{ preferences { ${PREFS_FIELDS} } keyStatus { cartesia anthropic } }`
+const LOAD_QUERY = `{ preferences { ${PREFS_FIELDS} } keyStatus { cartesia anthropic discord } }`
 const MODELS_QUERY = `{ models { id name repo present install command } }`
 const UPDATE_MUTATION = `mutation ($input: PreferencesInput!) { updatePreferences(input: $input) { ${PREFS_FIELDS} } }`
 

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CircleAlert, History, MapPin, RefreshCw } from 'lucide-react'
+import {
+  CircleAlert,
+  History,
+  MapPin,
+  MessagesSquare,
+  RefreshCw,
+} from 'lucide-react'
 import { Button, SectionTitle } from '@/app/ui'
 import {
   fetchSession,
@@ -12,6 +18,7 @@ import {
   formatOffset,
   formatStarted,
   sessionLabel,
+  sourceLabel,
   speakerLabel,
   statusLabel,
 } from './format'
@@ -83,6 +90,7 @@ function SessionRow({
         <span className="mt-0.5 block text-meta text-muted">
           {formatStarted(row.startedAt)}
           {duration ? ` · ${duration}` : ''} · {statusLabel(row.status)}
+          {sourceLabel(row.source) && ` · ${sourceLabel(row.source)}`}
         </span>
       </button>
     </li>
@@ -102,6 +110,12 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
           <span>{formatStarted(session.startedAt)}</span>
           {duration && <span>{duration}</span>}
           <span>{statusLabel(session.status)}</span>
+          {sourceLabel(session.source) && (
+            <span className="inline-flex items-center gap-1">
+              <MessagesSquare className="size-3.5" aria-hidden="true" />
+              {sourceLabel(session.source)}
+            </span>
+          )}
           {where && (
             <span className="inline-flex items-center gap-1">
               <MapPin className="size-3.5" aria-hidden="true" />
@@ -141,13 +155,13 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
               <li
                 key={u.id}
                 className={`max-w-[85%] rounded-panel border border-border px-3.5 py-2 text-body ${
-                  u.speaker === 'user'
+                  u.speaker === 'user' && session.source !== 'discord'
                     ? 'ml-auto bg-surface'
                     : 'mr-auto bg-surface-2'
                 }`}
               >
                 <span className="mb-0.5 flex justify-between gap-4 text-meta text-muted">
-                  <span>{speakerLabel(u.speaker)}</span>
+                  <span>{speakerLabel(u.speaker, u.speakerName)}</span>
                   <span className="tabular-nums">
                     {formatOffset(session.startedAt, u.tStart)}
                   </span>

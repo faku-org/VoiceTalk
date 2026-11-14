@@ -18,7 +18,7 @@ Audio runs over a WebSocket, `WS /stt`, served by the local Python sidecar (`voi
 - binds `127.0.0.1` only (no host flag). Nginx never sees it, and it is not on a public vhost.
 - is not part of the GraphQL schema. The desktop app's core keeps GraphQL for everything else (sessions, notes, tools, settings).
 - keeps raw audio in memory only, for the current speech segment. Nothing is written to disk.
-- accepts one connection at a time. A second connection is closed with 1013.
+- accepts one connection at a time. A second connection is closed with 1013. (Superseded by ADR 0010: up to `VT_STT_MAX_CLIENTS`, default 8.)
 
 This is an exception to the house rule, scoped to a loopback sidecar inside the desktop app. It does not apply to server APIs.
 

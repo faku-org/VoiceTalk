@@ -94,11 +94,23 @@ def test_ws_not_ready_sends_error_and_closes() -> None:
                 ws.receive_json()
 
 
-def test_ws_second_connection_is_refused(wav: Path) -> None:
-    app = create_app(_settings(), engine=FakeEngine())
+def test_ws_connection_over_the_limit_is_refused() -> None:
+    settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=1)
+    app = create_app(settings, engine=FakeEngine())
     with TestClient(app) as client:
         with client.websocket_connect("/stt"):
             with pytest.raises(WebSocketDisconnect) as refused:
                 with client.websocket_connect("/stt") as second:
                     second.receive_json()
+            assert refused.value.code == 1013
+
+
+def test_ws_accepts_several_clients_up_to_the_limit() -> None:
+    settings = Settings(glossary_path=GLOSSARY_PATH, llm_url=None, max_clients=2)
+    app = create_app(settings, engine=FakeEngine())
+    with TestClient(app) as client:
+        with client.websocket_connect("/stt"), client.websocket_connect("/stt"):
+            with pytest.raises(WebSocketDisconnect) as refused:
+                with client.websocket_connect("/stt") as third:
+                    third.receive_json()
             assert refused.value.code == 1013

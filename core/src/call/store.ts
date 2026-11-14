@@ -2,6 +2,7 @@ import {
   callEvents,
   type CallEndReason,
   type CallEvents,
+  type CallSource,
   type TranscriptEntry,
 } from './events.ts'
 import type { CallState } from './protocol.ts'
@@ -9,6 +10,7 @@ import type { CallState } from './protocol.ts'
 export interface CallSnapshot {
   id: string
   startedAt: number
+  source: CallSource
   state: CallState
   transcript: TranscriptEntry[]
 }
@@ -26,16 +28,21 @@ export class CallStore {
     return this.active
   }
 
-  start(): CallSnapshot {
+  start(source: CallSource = 'call'): CallSnapshot {
     if (this.active) throw new Error('a call is already active')
     const call: CallSnapshot = {
       id: crypto.randomUUID(),
       startedAt: Date.now(),
+      source,
       state: 'idle',
       transcript: [],
     }
     this.active = call
-    this.events.emit('callStarted', { callId: call.id, t: call.startedAt })
+    this.events.emit('callStarted', {
+      callId: call.id,
+      t: call.startedAt,
+      source,
+    })
     return call
   }
 

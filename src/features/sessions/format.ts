@@ -9,8 +9,16 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 export const statusLabel = (status: string): string =>
   STATUS_LABEL[status as SessionStatus] ?? status
 
-export const speakerLabel = (speaker: string): string =>
-  speaker === 'agent' ? 'Agente' : 'Tú'
+/** Real name when the capture knew it (Discord), else the generic label. */
+export const speakerLabel = (speaker: string, name?: string | null): string => {
+  const n = name?.trim()
+  if (n) return n
+  return speaker === 'agent' ? 'Agente' : 'Tú'
+}
+
+/** Where a session was captured. `call` (the microphone) is the default and needs no badge. */
+export const sourceLabel = (source: string | undefined): string | null =>
+  source === 'discord' ? 'Discord' : null
 
 /** "14 nov 2026, 18:30" in the user's locale (Spanish). `timeZone` exists for tests. */
 export function formatStarted(ms: number, timeZone?: string): string {
