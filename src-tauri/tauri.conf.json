@@ -4,7 +4,7 @@
   "version": "0.6.0",
   "identifier": "com.wefaber.voicetalk",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bun run web:dev",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"

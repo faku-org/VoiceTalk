@@ -25,6 +25,10 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0007: App shell, preferences in core, OTA updates](adr/0007-app-shell-and-updates.md)
 - [0008: Sessions, decision model and notes](adr/0008-notes.md)
 
+## Fixes batches
+
+- [2026-11-14 (v0.6.0)](fixes-2026-11-14-v0.6.0/README.md): brain providers, voice providers, chat tab, dashboard, generative UI, CUA. Roadmap: [project 6](https://github.com/orgs/faku-org/projects/6).
+
 ## Spikes
 
 - `spikes/cartesia/`: Cartesia Sonic TTS samples (`bun tts.ts <outDir> <voiceId:label>...`, reads `CARTESIA_API_KEY`).
