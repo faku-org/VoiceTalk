@@ -2,6 +2,8 @@
 // treats whatever comes back from invoke/listen as untrusted. Audio never reaches the webview (ADR 0009); only
 // source lists, state and level numbers do.
 
+import type { DetectRule, DetectRuleEntry } from '@/app/prefsTypes'
+
 export interface CaptureSource {
   pid: number
   name: string
@@ -50,6 +52,32 @@ export const PLATFORMS: ReadonlyArray<{ key: string; label: string }> = [
 
 export const platformLabel = (key: string): string =>
   PLATFORMS.find((p) => p.key === key)?.label ?? key
+
+/** A call another app has just started, from `capture://detected` (ADR 0016). */
+export interface DetectedCall {
+  platform: string
+  app: string
+  pid: number
+  /** What the user chose for this platform when the event fired. */
+  rule: 'ask' | 'always'
+}
+
+export function parseDetected(value: unknown): DetectedCall | null {
+  if (!isRecord(value)) return null
+  const { platform, app, pid, rule } = value
+  const p = num(pid)
+  if (p === null || !Number.isInteger(p) || p <= 0) return null
+  if (typeof platform !== 'string' || typeof app !== 'string') return null
+  // `never` never reaches the webview; anything unknown is treated as the safe default, ask.
+  return { platform, app, pid: p, rule: rule === 'always' ? 'always' : 'ask' }
+}
+
+/** `capture://detected-ended`: the pid of the call that ended. */
+export function parseDetectedEnded(value: unknown): number | null {
+  if (!isRecord(value)) return null
+  const p = num(value.pid)
+  return p !== null && Number.isInteger(p) && p > 0 ? p : null
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -168,5 +196,37 @@ export function errorText(error: CaptureError): string {
       return blockText(error.code)
     default:
       return error.message
+  }
+}
+
+/** Rule the user chose for a platform; no entry means ask. */
+export const ruleFor = (
+  rules: ReadonlyArray<DetectRuleEntry>,
+  platform: string,
+): DetectRule => rules.find((r) => r.platform === platform)?.rule ?? 'ask'
+
+/** New list with `platform` set to `rule`; `ask` is the default, so it drops the entry. */
+export function withRule(
+  rules: ReadonlyArray<DetectRuleEntry>,
+  platform: string,
+  rule: DetectRule,
+): DetectRuleEntry[] {
+  const rest = rules.filter((r) => r.platform !== platform)
+  return rule === 'ask' ? rest : [...rest, { platform, rule }]
+}
+
+/** Payload of `capture_detect_config`: detection runs only while capture is on and not blocked by the env. */
+export function detectConfig(
+  capture: {
+    enabled: boolean
+    detect: { enabled: boolean; rules: ReadonlyArray<DetectRuleEntry> }
+  },
+  block: string | null | undefined,
+) {
+  return {
+    enabled: capture.enabled && capture.detect.enabled && block !== 'env',
+    rules: Object.fromEntries(
+      capture.detect.rules.map((r) => [r.platform, r.rule]),
+    ),
   }
 }

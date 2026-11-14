@@ -128,6 +128,7 @@ describe('capture gate', () => {
     expect(DEFAULT_PREFERENCES.capture).toEqual({
       enabled: false,
       consentAck: false,
+      detect: { enabled: true, rules: {} },
       nativeMic: false,
     })
     const next = mergePreferences(DEFAULT_PREFERENCES, {
@@ -136,6 +137,7 @@ describe('capture gate', () => {
     expect(next.capture).toEqual({
       enabled: false,
       consentAck: true,
+      detect: { enabled: true, rules: {} },
       nativeMic: false,
     })
   })

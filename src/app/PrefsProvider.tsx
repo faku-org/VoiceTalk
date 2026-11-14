@@ -26,6 +26,14 @@ function mergeLocal(base: Preferences, patch: PreferencesPatch): Preferences {
     brain: { ...base.brain, ...stripUndefined(patch.brain) },
     thresholds: { ...base.thresholds, ...stripUndefined(patch.thresholds) },
     location: { ...base.location, ...stripUndefined(patch.location) },
+    capture: {
+      ...base.capture,
+      ...stripUndefined({ ...patch.capture, detect: undefined }),
+      detect: {
+        ...base.capture.detect,
+        ...stripUndefined(patch.capture?.detect),
+      },
+    },
     tts: {
       ...base.tts,
       ...stripUndefined(patch.tts),

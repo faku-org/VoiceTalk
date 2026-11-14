@@ -163,18 +163,61 @@ describe('prefs store', () => {
     expect(store.get().capture).toEqual({
       enabled: true,
       consentAck: true,
+      detect: { enabled: true, rules: {} },
       nativeMic: false,
     })
     const next = store.update({ capture: { nativeMic: true } })
     expect(next.capture).toEqual({
       enabled: true,
       consentAck: true,
+      detect: { enabled: true, rules: {} },
       nativeMic: true,
     })
     expect(createPrefsStore(dir).get().capture.nativeMic).toBe(true)
     expect(() => store.update({ capture: { nativeMic: 'yes' } })).toThrow(
       PreferencesError,
     )
+  })
+
+  test('call detection defaults on, a file without it gets the defaults', () => {
+    writeFileSync(
+      join(dir, 'preferences.json'),
+      JSON.stringify({ capture: { enabled: true, consentAck: true } }),
+    )
+    const prefs = createPrefsStore(dir).get()
+    expect(prefs.capture).toEqual({
+      enabled: true,
+      consentAck: true,
+      detect: { enabled: true, rules: {} },
+      nativeMic: false,
+    })
+  })
+
+  test('detect rules replace as a whole, other capture fields survive', () => {
+    const store = createPrefsStore(dir)
+    store.update({ capture: { enabled: true } })
+    store.update({ capture: { detect: { rules: { meet: 'always' } } } })
+    const next = store.update({
+      capture: { detect: { rules: { discord: 'never' } } },
+    })
+    expect(next.capture.enabled).toBe(true)
+    expect(next.capture.detect).toEqual({
+      enabled: true,
+      rules: { discord: 'never' },
+    })
+    expect(
+      store.update({ capture: { detect: { enabled: false } } }).capture.detect,
+    ).toEqual({ enabled: false, rules: { discord: 'never' } })
+  })
+
+  test('rejects an unknown platform or rule', () => {
+    const store = createPrefsStore(dir)
+    expect(() =>
+      store.update({ capture: { detect: { rules: { skype: 'never' } } } }),
+    ).toThrow(PreferencesError)
+    expect(() =>
+      store.update({ capture: { detect: { rules: { meet: 'maybe' } } } }),
+    ).toThrow(PreferencesError)
   })
 
   test('has no secret fields', () => {
@@ -296,6 +339,25 @@ describe('GraphQL preferences', () => {
       enabled: false,
       consentAck: false,
       nativeMic: true,
+    })
+  })
+
+  test('detect rules go through GraphQL as a list', async () => {
+    setPrefsStore(createPrefsStore(dir))
+    const res = await gql(
+      'mutation($i: PreferencesInput!) { updatePreferences(input: $i) { capture { detect { enabled rules { platform rule } } } } }',
+      {
+        i: {
+          capture: {
+            detect: { rules: [{ platform: 'zoom', rule: 'never' }] },
+          },
+        },
+      },
+    )
+    expect(res.errors).toBeUndefined()
+    expect(res.data?.updatePreferences.capture.detect).toEqual({
+      enabled: true,
+      rules: [{ platform: 'zoom', rule: 'never' }],
     })
   })
 

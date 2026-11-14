@@ -1,3 +1,5 @@
 export { CaptureScreen } from './CaptureScreen'
+export { DetectPrompt } from './DetectPrompt'
 export { useCapture } from './use-capture'
+export { useCallDetection } from './use-detect'
 export type { CaptureApi } from './use-capture'

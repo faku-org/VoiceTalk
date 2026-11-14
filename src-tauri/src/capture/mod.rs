@@ -3,9 +3,14 @@
 //! Rust owns the audio (WASAPI process loopback needs a native, COM-capable thread and no extra install), core owns
 //! VAD+STT, sessions and notes. Audio never goes through GraphQL: it travels over the `/capture` WebSocket
 //! (ADR 0002 pattern, loopback only).
+//!
+//! `detect` / `detect_win` notice a call starting in another app and tell the webview (ADR 0016).
 
 pub mod apps;
 pub mod client;
+pub mod detect;
+#[cfg(windows)]
+pub mod detect_win;
 pub mod mic;
 pub mod resample;
 #[cfg(windows)]
@@ -159,13 +164,14 @@ mod manager {
             };
             let remote_meter = Arc::new(AtomicU32::new(0));
             let mic_meter = Arc::new(AtomicU32::new(0));
-            let abort = |stop: &Arc<AtomicBool>, captures: Vec<win::Capture>, pump: JoinHandle<Outcome>| {
-                stop.store(true, Ordering::SeqCst);
-                for c in captures {
-                    let _ = c.thread.join();
-                }
-                let _ = pump.join();
-            };
+            let abort =
+                |stop: &Arc<AtomicBool>, captures: Vec<win::Capture>, pump: JoinHandle<Outcome>| {
+                    stop.store(true, Ordering::SeqCst);
+                    for c in captures {
+                        let _ = c.thread.join();
+                    }
+                    let _ = pump.join();
+                };
 
             let remote = win::spawn(
                 Target::Process(source.pid),

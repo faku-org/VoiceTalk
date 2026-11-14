@@ -3,6 +3,7 @@ mod sidecar;
 
 use std::path::{Path, PathBuf};
 
+use capture::detect_win::{capture_detect_config, DetectManager};
 use capture::{
     capture_list_sources, capture_start, capture_status, capture_stop, native_mic_start,
     native_mic_stop, CaptureManager, NativeMicManager,
@@ -44,12 +45,16 @@ pub fn run() {
             capture_start,
             capture_stop,
             capture_status,
+            capture_detect_config,
             native_mic_start,
             native_mic_stop
         ])
         .setup(|app| {
             app.manage(Supervisor::start(repo_root()));
             app.manage(CaptureManager::default());
+            let detect = DetectManager::default();
+            detect.spawn(app.handle().clone());
+            app.manage(detect);
             app.manage(NativeMicManager::default());
             Ok(())
         })

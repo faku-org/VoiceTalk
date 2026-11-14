@@ -1,6 +1,6 @@
 [package]
 name = "voicetalk"
-version = "0.17.0"
+version = "0.18.0"
 description = "VoiceTalk desktop shell (Tauri v2): supervises core (Bun) and voice (Python) sidecars"
 authors = ["Faku"]
 edition = "2021"
@@ -33,4 +33,7 @@ wasapi = "0.27"
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_System_Diagnostics_ToolHelp",
+  # Call detection (ADR 0016): who holds the microphone (registry) and which windows are open.
+  "Win32_System_Registry",
+  "Win32_UI_WindowsAndMessaging",
 ] }
