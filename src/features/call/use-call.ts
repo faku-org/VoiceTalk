@@ -13,10 +13,15 @@ import {
 
 export type CallPhase = 'idle' | 'connecting' | 'active'
 
+/** Live voice levels, linear RMS 0..1, sampled per frame by the orb. */
+export interface CallLevels {
+  mic: () => number
+  playback: () => number
+}
+
 export interface CallView {
   phase: CallPhase
   agentState: CallState
-  level: number
   transcript: TranscriptEntry[]
   latency: { turn: number; latency: TurnLatency } | null
   error: string | null
@@ -25,7 +30,6 @@ export interface CallView {
 const INITIAL: CallView = {
   phase: 'idle',
   agentState: 'idle',
-  level: 0,
   transcript: [],
   latency: null,
   error: null,
@@ -50,10 +54,17 @@ const stopNativeMic = () => {
 export function useCall(corePort: number | null, nativeMic = false) {
   const [view, setView] = useState<CallView>(INITIAL)
   const live = useRef<Live | null>(null)
+  // Voice levels change ~50 times a second: refs, not state, so the orb reads them each frame.
+  const micLevel = useRef(0)
+  const [levels] = useState<CallLevels>(() => ({
+    mic: () => micLevel.current,
+    playback: () => live.current?.player.level() ?? 0,
+  }))
 
   const teardown = (keepTranscript: boolean, error: string | null) => {
     const current = live.current
     live.current = null
+    micLevel.current = 0
     if (current) {
       current.closing = true
       current.mic?.stop()
@@ -165,16 +176,21 @@ export function useCall(corePort: number | null, nativeMic = false) {
       switch (event.type) {
         case 'stop_playback':
           player.flush()
+          // Barge-in: the orb leaves `speaking` now, not when the next state event arrives.
+          setView((v) =>
+            v.agentState === 'speaking' ? { ...v, agentState: 'listening' } : v,
+          )
           break
         case 'state':
-          setView((v) => ({
-            ...v,
-            agentState: event.state,
-            level: event.state === 'idle' ? 0 : v.level,
-          }))
+          if (event.state === 'idle') micLevel.current = 0
+          setView((v) =>
+            v.agentState === event.state
+              ? v
+              : { ...v, agentState: event.state },
+          )
           break
         case 'level':
-          setView((v) => ({ ...v, level: event.rms }))
+          micLevel.current = event.rms
           break
         case 'transcript':
           setView((v) => ({
@@ -224,5 +240,5 @@ export function useCall(corePort: number | null, nativeMic = false) {
     [],
   )
 
-  return { view, start, stop }
+  return { view, levels, start, stop }
 }

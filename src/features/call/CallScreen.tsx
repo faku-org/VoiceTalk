@@ -1,142 +1,152 @@
-import { CircleAlert, LoaderCircle, Mic, PhoneOff } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { CircleAlert, Mic, PhoneOff } from 'lucide-react'
 import { usePrefs } from '@/app/prefsContext'
+import { formatClock } from '@/features/capture/protocol'
+import { CallTranscript } from './CallTranscript'
+import { useAfter, useElapsedSeconds, useMediaQuery } from './call-hooks'
+import { EtherOrb } from './EtherOrb'
+import {
+  RESTING_AFTER_MS,
+  etherStateFor,
+  stateWord,
+  type CallSnapshot,
+} from './ether-state'
 import { useCall } from './use-call'
-import type { CallState } from './protocol'
 
-const STATE_LABEL: Record<CallState, string> = {
-  idle: 'En espera',
-  listening: 'Escuchando',
-  thinking: 'Pensando',
-  speaking: 'Hablando',
-}
+// Stage side in CSS px. Wide: Ether in the left column. Narrow: small and on top once the call is on.
+const STAGE_WIDE = 240
+const STAGE_ALONE_NARROW = 160
+const STAGE_CALL_NARROW = 120
 
-const STATE_ICON: Record<CallState, LucideIcon> = {
-  idle: Mic,
-  listening: Mic,
-  thinking: LoaderCircle,
-  speaking: Mic,
-}
-
-// rms is linear 0..1; speech sits low, so a square root keeps the bar readable.
-function levelPercent(rms: number): number {
-  return Math.round(Math.min(1, Math.sqrt(Math.max(0, rms)) * 1.4) * 100)
-}
-
-export function CallScreen({ corePort }: { corePort: number | null }) {
+export function CallScreen({
+  corePort,
+  offline = false,
+}: {
+  corePort: number | null
+  /** Sidecar or model missing: Ether shows `offline` and says why. */
+  offline?: boolean
+}) {
   const { prefs } = usePrefs()
-  const { view, start, stop } = useCall(
+  const { view, levels, start, stop } = useCall(
     corePort,
     prefs?.capture.nativeMic ?? false,
   )
+  const wide = useMediaQuery('(min-width: 1024px)')
   const inCall = view.phase !== 'idle'
-  const StateIcon = STATE_ICON[view.agentState]
-  const pct = levelPercent(view.level)
+  // After a call the transcript stays: keep the two-part layout instead of dropping it.
+  const hasConversation = inCall || view.transcript.length > 0
+
+  const seconds = useElapsedSeconds(view.phase === 'active')
+  const quiet = view.phase === 'idle' && !offline && view.error === null
+  const longIdle = useAfter(quiet, RESTING_AFTER_MS)
+
+  const snapshot: CallSnapshot = {
+    phase: view.phase,
+    agentState: view.agentState,
+    error: view.error !== null,
+    offline,
+    longIdle,
+  }
+  const orbState = etherStateFor(snapshot)
+  const word = stateWord(orbState, view.phase)
+  const stage = wide
+    ? STAGE_WIDE
+    : hasConversation
+      ? STAGE_CALL_NARROW
+      : STAGE_ALONE_NARROW
 
   return (
     <section aria-labelledby="call-title" className="mt-10">
-      <div className="flex items-center justify-between gap-4">
-        <h2 id="call-title" className="text-h2 font-semibold">
-          Llamada
-        </h2>
-        {inCall ? (
-          <button
-            type="button"
-            onClick={stop}
-            className="inline-flex min-h-11 items-center gap-2 rounded-control bg-danger px-4 text-body-lg font-medium text-on-danger"
-          >
-            <PhoneOff className="size-4" aria-hidden="true" />
-            Terminar
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void start()}
-            disabled={corePort === null}
-            className="inline-flex min-h-11 items-center gap-2 rounded-control bg-accent px-4 text-body-lg font-medium text-on-accent disabled:opacity-50"
-          >
-            <Mic className="size-4" aria-hidden="true" />
-            Iniciar llamada
-          </button>
-        )}
-      </div>
-
-      {inCall && (
-        <div className="mt-4 rounded-2xl border border-hairline bg-surface p-5">
-          <p
-            role="status"
-            className="flex items-center gap-2 text-sm font-medium"
-          >
-            <StateIcon
-              className={`size-4 ${view.agentState === 'thinking' ? 'motion-safe:animate-spin' : ''}`}
-              aria-hidden="true"
-            />
-            {view.phase === 'connecting'
-              ? 'Conectando…'
-              : STATE_LABEL[view.agentState]}
-          </p>
-          <div
-            role="meter"
-            aria-label="Nivel del micrófono"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={pct}
-            className="mt-3 h-1.5 overflow-hidden rounded-full bg-hairline"
-          >
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-75"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {view.error && (
-        <p
-          role="alert"
-          className="mt-4 flex items-start gap-2 text-sm text-danger"
-        >
-          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          {view.error}
-        </p>
-      )}
+      <h2 id="call-title" className="text-h2 font-semibold">
+        Llamada
+      </h2>
 
       <div
-        className="mt-4 space-y-3"
-        aria-live="polite"
-        aria-label="Transcripción"
+        className={`mt-6 flex flex-col gap-6 ${
+          hasConversation
+            ? 'items-center lg:flex-row lg:items-start lg:gap-8'
+            : 'items-center py-6'
+        }`}
       >
-        {view.transcript.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-hairline p-5 text-sm text-text-muted">
-            {inCall
-              ? 'Habla cuando quieras. La transcripción aparecerá aquí.'
-              : 'Inicia una llamada para conversar por voz. El audio se procesa en este equipo; la voz del asistente se genera en la nube.'}
+        <div
+          className={`flex w-full flex-col items-center gap-4 text-center ${
+            hasConversation ? 'lg:sticky lg:top-8 lg:w-70 lg:shrink-0' : ''
+          }`}
+        >
+          <EtherOrb
+            state={orbState}
+            phase={view.phase}
+            word={word}
+            stage={stage}
+            levels={levels}
+          />
+          <p role="status" className="text-body-lg font-medium">
+            {word}
           </p>
-        ) : (
-          view.transcript.map((entry) => (
-            <p
-              key={entry.id}
-              className={`chat max-w-[85%] rounded-card border border-border px-4 py-2.5 ${
-                entry.speaker === 'user'
-                  ? 'ml-auto bg-surface'
-                  : 'mr-auto bg-canvas'
-              }`}
-            >
-              <span className="mb-0.5 block font-sans text-meta text-muted">
-                {entry.speaker === 'user' ? 'Tú' : 'Asistente'}
-              </span>
-              {entry.text}
+          {view.phase === 'active' && (
+            <p className="display tabular-nums" aria-label="Duración">
+              {formatClock(seconds)}
             </p>
-          ))
+          )}
+
+          {offline && !inCall && (
+            <p className="max-w-sm text-meta text-muted">
+              Los servicios locales no están disponibles. Revisa su estado en
+              Preferencias.
+            </p>
+          )}
+          {view.error && (
+            <p
+              role="alert"
+              className="flex max-w-sm items-start gap-2 text-left text-sm text-danger"
+            >
+              <CircleAlert
+                className="mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {view.error}
+            </p>
+          )}
+
+          {inCall ? (
+            <button
+              type="button"
+              onClick={stop}
+              className="inline-flex h-row-touch w-full max-w-xs items-center justify-center gap-2 rounded-control bg-danger px-4 text-body-lg font-medium text-on-danger"
+            >
+              <PhoneOff className="size-4" aria-hidden="true" />
+              Terminar
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void start()}
+              disabled={corePort === null}
+              className="inline-flex h-row-touch w-full max-w-xs items-center justify-center gap-2 rounded-control bg-accent px-4 text-body-lg font-medium text-on-accent disabled:opacity-50"
+            >
+              <Mic className="size-4" aria-hidden="true" />
+              Iniciar llamada
+            </button>
+          )}
+          {!hasConversation && (
+            <p className="max-w-sm text-meta text-muted">
+              El audio se procesa en este equipo; la voz del asistente se genera
+              en la nube.
+            </p>
+          )}
+        </div>
+
+        {hasConversation && (
+          <div className="w-full min-w-0 flex-1">
+            <CallTranscript entries={view.transcript} inCall={inCall} />
+            {view.latency && (
+              <p className="mt-4 font-mono text-xs text-text-muted tabular-nums">
+                Último turno: {Math.round(view.latency.latency.totalMs)} ms
+                hasta el primer audio
+              </p>
+            )}
+          </div>
         )}
       </div>
-
-      {view.latency && (
-        <p className="mt-4 font-mono text-xs text-text-muted tabular-nums">
-          Último turno: {Math.round(view.latency.latency.totalMs)} ms hasta el
-          primer audio
-        </p>
-      )}
     </section>
   )
 }
