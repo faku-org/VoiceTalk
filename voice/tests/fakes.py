@@ -46,12 +46,19 @@ class FakeEngine:
         self.error: str | None = None
         self.gate = threading.Event()  # set() lets load() finish
         self.transcribed_samples: list[int] = []
+        self.model = "phonon"
+        self.pending: str | None = None
+        self.switched: list[str] = []
         if ready:
             self.gate.set()
 
     def load(self) -> None:
         self.gate.wait(10)
         self.status = "ready"
+
+    def switch(self, model_id: str) -> None:
+        self.switched.append(model_id)
+        self.model = model_id
 
     def wait_ready(self, timeout: float | None = None) -> bool:
         self.gate.wait(timeout)

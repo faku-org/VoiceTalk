@@ -1,5 +1,6 @@
 export * from './provider.ts'
 export * from './openai-compat.ts'
 export * from './anthropic.ts'
+export * from './presets.ts'
 export * from './config.ts'
 export * from './persona.ts'

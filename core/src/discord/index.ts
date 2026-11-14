@@ -1,3 +1,4 @@
+import { liveChat, liveTts } from '../call/live.ts'
 import type { CallRuntime } from '../call/ws.ts'
 import { discordAvailable, loadDiscordConfig } from './config.ts'
 import { DiscordJsGateway } from './discord-js-gateway.ts'
@@ -24,8 +25,9 @@ export function createDiscordService(
   const service = new DiscordService({
     config,
     gateway,
-    llm: runtime.llm,
-    tts: runtime.tts,
+    // Resolved per use, so brain/voice changes in preferences reach Discord without a restart.
+    llm: liveChat(() => runtime.llm),
+    tts: runtime.tts ? liveTts(() => runtime.tts) : null,
     stt: runtime.stt,
     log: runtime.log,
   })

@@ -23,6 +23,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 
 use super::apps::{platform_key, platform_for_image, root_pid, Proc};
 use super::client::Frame;
+use super::mic::{downmix, MicPipeline};
 use super::resample::{f32_from_bytes, level, Converter};
 
 const RATE: usize = 48_000;
@@ -146,6 +147,8 @@ pub enum Target {
     Process(u32),
     /// Default microphone.
     Mic,
+    /// Everything the default output device plays (AEC reference for the native mic, ADR 0014).
+    Loopback,
 }
 
 /// Handle of a running capture thread.
@@ -173,6 +176,11 @@ fn open(target: Target) -> Result<AudioClient, String> {
             .and_then(|d| d.get_default_device(Direction::Capture))
             .and_then(|d| d.get_iaudioclient())
             .map_err(|e| format!("no se pudo abrir el micrófono: {e}"))?,
+        // A render endpoint initialised with Direction::Capture is a loopback stream.
+        Target::Loopback => DeviceEnumerator::new()
+            .and_then(|d| d.get_default_device(Direction::Render))
+            .and_then(|d| d.get_iaudioclient())
+            .map_err(|e| format!("no se pudo abrir la salida de audio: {e}"))?,
     };
     let mode = StreamMode::EventsShared {
         autoconvert: true,
@@ -241,6 +249,90 @@ fn run(
         }
     }
     let _ = client.stop_stream();
+}
+
+/// Native mic thread (ADR 0014): the mic drives the loop (it delivers a block every ~10 ms), the system loopback is
+/// drained right before each pass so reference and mic stay on one clock, then [`MicPipeline`] does AEC3 -> RNNoise
+/// -> 16 kHz frames. `tx` gets raw 640 B frames, no channel tag (same bytes the webview mic sends on `/call`).
+fn run_native_mic(
+    stop: &AtomicBool,
+    tx: &SyncSender<Vec<u8>>,
+    meter: &AtomicU32,
+    ready: &mpsc::Sender<Result<(), String>>,
+) {
+    let _ = initialize_mta();
+    let setup = (|| {
+        let mic = open(Target::Mic)?;
+        let mic_handle = mic.set_get_eventhandle().map_err(|e| e.to_string())?;
+        let mic_cap = mic.get_audiocaptureclient().map_err(|e| e.to_string())?;
+        // Without a reference the AEC has nothing to cancel against, so a missing loopback is an error, not a
+        // silent downgrade: the webview mic is the fallback and the UI says so.
+        let lb = open(Target::Loopback)?;
+        let lb_handle = lb.set_get_eventhandle().map_err(|e| e.to_string())?;
+        let lb_cap = lb.get_audiocaptureclient().map_err(|e| e.to_string())?;
+        lb.start_stream().map_err(|e| e.to_string())?;
+        mic.start_stream().map_err(|e| e.to_string())?;
+        Ok::<_, String>((mic, mic_handle, mic_cap, lb, lb_handle, lb_cap))
+    })();
+    let (mic, mic_handle, mic_cap, lb, _lb_handle, lb_cap) = match setup {
+        Ok(v) => {
+            let _ = ready.send(Ok(()));
+            v
+        }
+        Err(e) => {
+            let _ = ready.send(Err(e));
+            return;
+        }
+    };
+
+    let mut pipeline = MicPipeline::new(true);
+    let mut mic_q: VecDeque<u8> = VecDeque::new();
+    let mut lb_q: VecDeque<u8> = VecDeque::new();
+    while !stop.load(Ordering::SeqCst) {
+        let _ = mic_handle.wait_for_event(WAIT_MS);
+        // Reference first: the far end of a block must already be queued when its echo is processed.
+        loop {
+            if lb_cap.read_from_device_to_deque(&mut lb_q).is_err() || lb_q.is_empty() {
+                break;
+            }
+            let bytes: Vec<u8> = lb_q.drain(..).collect();
+            pipeline.push_far(&downmix(&f32_from_bytes(&bytes), CHANNELS));
+        }
+        loop {
+            if mic_cap.read_from_device_to_deque(&mut mic_q).is_err() || mic_q.is_empty() {
+                break;
+            }
+            let bytes: Vec<u8> = mic_q.drain(..).collect();
+            let mono = downmix(&f32_from_bytes(&bytes), CHANNELS);
+            store_level(meter, level(&mono));
+            for frame in pipeline.push_near(&mono) {
+                match tx.try_send(frame) {
+                    Ok(()) | Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => {
+                        let _ = mic.stop_stream();
+                        let _ = lb.stop_stream();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    let _ = mic.stop_stream();
+    let _ = lb.stop_stream();
+}
+
+/// Spawns the native mic thread. See [`run_native_mic`].
+pub fn spawn_native_mic(
+    stop: Arc<AtomicBool>,
+    tx: SyncSender<Vec<u8>>,
+    meter: Arc<AtomicU32>,
+) -> Capture {
+    let (ready_tx, ready) = mpsc::channel();
+    let thread = thread::Builder::new()
+        .name("vt-native-mic".into())
+        .spawn(move || run_native_mic(&stop, &tx, &meter, &ready_tx))
+        .expect("spawn native mic thread");
+    Capture { thread, ready }
 }
 
 /// Spawns a capture thread for `target`. Frames of 20 ms (16 kHz mono s16) go to `tx`; the loudest level since the

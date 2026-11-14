@@ -1,9 +1,27 @@
 import { z } from 'zod'
+import {
+  DEFAULT_TTS_PROVIDER,
+  TTS_CATALOG,
+  TTS_PROVIDERS,
+  defaultTtsVoices,
+} from '../tts/catalog.ts'
+import {
+  DEFAULT_BRAIN,
+  EFFORTS,
+  PROVIDERS,
+  STYLES,
+  SYSTEM_PROMPT_MAX,
+} from '../llm/presets.ts'
 
-// Sofía, the default Cartesia voice (ADR 0003 / 0004).
-export const DEFAULT_VOICE_ID = '4663e61a-a9c2-40e1-94c5-c461ed9d3d31'
+// Sofía, the default Cartesia voice (ADR 0003 / 0004). Kept as the migration target of the legacy `voiceId`.
+export const DEFAULT_VOICE_ID = TTS_CATALOG.cartesia.defaultVoice
 export const DEFAULT_LLM_URL = 'http://127.0.0.1:8080/v1'
 export const ONBOARDING_VERSION = 1
+
+/** Speech-to-text models the voice sidecar can load. */
+export const STT_MODELS = ['phonon', 'canary', 'fluid'] as const
+export type SttModelId = (typeof STT_MODELS)[number]
+export const DEFAULT_STT: SttModelId = 'phonon'
 
 const httpUrl = z
   .string()
@@ -41,6 +59,19 @@ const captureShape = z.object({
   enabled: z.boolean(),
   /** The user confirmed the notice that recording others may need their consent. */
   consentAck: z.boolean(),
+  /** Call mic captured natively with echo cancellation against the system audio (ADR 0014). Off = webview mic. */
+  nativeMic: z.boolean(),
+})
+
+const voiceIdShape = z.string().trim().min(1).max(64)
+
+// One voice per provider, so switching provider never loses the other one's choice (ADR 0013).
+const ttsShape = z.object({
+  provider: z.enum(TTS_PROVIDERS),
+  voices: z.object({
+    cartesia: voiceIdShape,
+    xai: voiceIdShape,
+  }),
 })
 
 const onboardingShape = z.object({
@@ -48,10 +79,23 @@ const onboardingShape = z.object({
   completedAt: z.iso.datetime(),
 })
 
+const brainShape = z.object({
+  provider: z.enum(PROVIDERS),
+  /** Model id. Empty = the preset default. */
+  model: z.string().trim().max(120),
+  /** Endpoint for Ollama and custom. Empty = the preset default (local uses `llmUrl`). */
+  baseUrl: z.union([z.literal(''), httpUrl]),
+  effort: z.enum(EFFORTS),
+  style: z.enum(STYLES),
+  /** Extra instructions appended to the persona. */
+  systemPrompt: z.string().max(SYSTEM_PROMPT_MAX),
+})
+
 const shape = z.object({
-  brain: z.enum(['local', 'claude']),
+  brain: brainShape,
   llmUrl: httpUrl,
-  voiceId: z.string().trim().min(1).max(64),
+  tts: ttsShape,
+  stt: z.enum(STT_MODELS),
   thresholds: thresholdsShape,
   folders: z
     .array(z.string().trim().min(1).max(1024))
@@ -68,21 +112,24 @@ export type Preferences = z.infer<typeof shape>
 
 export const patchSchema = shape
   .extend({
+    brain: brainShape.partial(),
     thresholds: thresholdsShape.partial(),
     location: locationShape.partial(),
     capture: captureShape.partial(),
+    tts: ttsShape.extend({ voices: ttsShape.shape.voices.partial() }).partial(),
   })
   .partial()
 export type PreferencesPatch = z.infer<typeof patchSchema>
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  brain: 'local',
+  brain: DEFAULT_BRAIN,
   llmUrl: DEFAULT_LLM_URL,
-  voiceId: DEFAULT_VOICE_ID,
+  tts: { provider: DEFAULT_TTS_PROVIDER, voices: defaultTtsVoices() },
+  stt: DEFAULT_STT,
   thresholds: { respondConfidence: 0.6, vadSensitivity: 0.5, endOfTurnMs: 700 },
   folders: [],
   location: { manual: '', ipGeolocation: false },
-  capture: { enabled: false, consentAck: false },
+  capture: { enabled: false, consentAck: false, nativeMic: false },
   theme: 'system',
   onboarding: null,
 }
@@ -96,12 +143,48 @@ export function mergePreferences(
     Object.fromEntries(
       Object.entries(value).filter(([, v]) => v !== undefined),
     ) as Partial<T>
-  const { thresholds, location, capture, ...rest } = patch
+  const { brain, thresholds, location, capture, tts, ...rest } = patch
+  const { voices, ...ttsRest } = tts ?? {}
   return {
     ...base,
     ...defined(rest),
+    brain: { ...base.brain, ...defined(brain ?? {}) },
     thresholds: { ...base.thresholds, ...defined(thresholds ?? {}) },
     location: { ...base.location, ...defined(location ?? {}) },
     capture: { ...base.capture, ...defined(capture ?? {}) },
+    tts: {
+      ...base.tts,
+      ...defined(ttsRest),
+      voices: { ...base.tts.voices, ...defined(voices ?? {}) },
+    },
+  }
+}
+
+/**
+ * Upgrades old files and old clients to the current shape. Applied to stored files and to every patch:
+ * - before v0.11 `brain` was the string `'local'` or `'claude'` → `{ provider }`;
+ * - before v0.12 a flat `voiceId` (always a Cartesia voice) → `tts.voices.cartesia`, where an explicit
+ *   `tts.voices.cartesia` wins and a blank `voiceId` is dropped.
+ * Anything else passes through for the schema to accept or reject.
+ */
+export function migrateLegacyPreferences(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw
+  let next = raw as Record<string, unknown>
+  const { brain } = next
+  if (brain === 'local' || brain === 'claude') {
+    next = { ...next, brain: { provider: brain } }
+  }
+  if (!('voiceId' in next)) return next
+  const { voiceId, ...rest } = next
+  if (typeof voiceId !== 'string' || voiceId.trim() === '') return rest
+  const tts = (
+    typeof rest.tts === 'object' && rest.tts !== null ? rest.tts : {}
+  ) as Record<string, unknown>
+  const voices = (
+    typeof tts.voices === 'object' && tts.voices !== null ? tts.voices : {}
+  ) as Record<string, unknown>
+  return {
+    ...rest,
+    tts: { ...tts, voices: { cartesia: voiceId, ...voices } },
   }
 }
