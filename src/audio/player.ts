@@ -1,4 +1,7 @@
 // Gapless playback of pcm_s16le 24 kHz mono chunks, with an immediate flush for barge-in.
+// `level()` reads the playback loudness (post-flush too) so the UI can show Ether speaking.
+
+import { rmsOf } from './level'
 
 export const PLAYBACK_RATE = 24000
 // Scheduling lead so the first chunk never starts in the past.
@@ -9,6 +12,8 @@ const FADE_S = 0.012
 export class PcmPlayer {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
+  private analyser: AnalyserNode | null = null
+  private scratch: Float32Array<ArrayBuffer> | null = null
   private nextTime = 0
   private sources = new Set<AudioBufferSourceNode>()
   // PCM16 chunks can split a sample across frames: keep the dangling byte.
@@ -21,6 +26,11 @@ export class PcmPlayer {
         sampleRate: PLAYBACK_RATE,
         latencyHint: 'interactive',
       })
+      const analyser = this.ctx.createAnalyser()
+      analyser.fftSize = 512
+      analyser.connect(this.ctx.destination)
+      this.analyser = analyser
+      this.scratch = new Float32Array(analyser.fftSize)
       this.master = this.makeMaster(this.ctx)
     }
     if (this.ctx.state !== 'running') await this.ctx.resume()
@@ -85,6 +95,15 @@ export class PcmPlayer {
     this.master = this.makeMaster(ctx)
   }
 
+  // Loudness of what is playing right now, RMS 0..1. Silence once flushed.
+  level(): number {
+    const analyser = this.analyser
+    const scratch = this.scratch
+    if (!analyser || !scratch) return 0
+    analyser.getFloatTimeDomainData(scratch)
+    return rmsOf(scratch)
+  }
+
   // Seconds of audio still queued ahead of the playhead.
   get queuedSeconds(): number {
     return this.ctx ? Math.max(0, this.nextTime - this.ctx.currentTime) : 0
@@ -95,12 +114,14 @@ export class PcmPlayer {
     const ctx = this.ctx
     this.ctx = null
     this.master = null
+    this.analyser = null
+    this.scratch = null
     if (ctx && ctx.state !== 'closed') await ctx.close()
   }
 
   private makeMaster(ctx: AudioContext): GainNode {
     const gain = ctx.createGain()
-    gain.connect(ctx.destination)
+    gain.connect(this.analyser ?? ctx.destination)
     return gain
   }
 }

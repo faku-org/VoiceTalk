@@ -122,7 +122,7 @@ Never mix: a button is never serif, a transcript turn is never Bricolage.
 
 ## Ether
 
-Ether is the character from `@wefaber/orb/rig` (0.2.0+): a dotted sphere with eyes and a 3D ring, driven by a rig. The app does not depend on the package yet (orb work: separate issue).
+Ether is the character from `@wefaber/orb/rig` (0.2.0+): a dotted sphere with eyes and a 3D ring, driven by a rig. The call screen consumes it through `src/features/call/EtherOrb.tsx` (call state → rig state, mic/playback level → `body.listen`/`body.speak`).
 
 - **State** (`setState`) belongs to the call: `idle`, `listening`, `thinking`, `speaking`, plus `working` (computer use), `attention` (approval needed), `error`, `offline` (sidecar or model missing), `resting` (app idle for long). The ring carries it; the state is always written next to her.
 - **Mood** (`setMood`) is rare and lasting: only neutral, happy, curious, focused, tired. The other six (surprised, sad, mischievous, proud, shy, bored) stay out. **Reactions** (`react`) are one-shot: nod, done, think, flash, hop. No spin, laugh or excited.

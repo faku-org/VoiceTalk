@@ -16,10 +16,10 @@ Batch from Faku after the P1–P5 integration. Roadmap: [VoiceTalk Roadmap](http
 
 ## Brain (#6)
 
-- [ ] Brain not hardcoded to Claude: presets for llama-server, Ollama, Claude, OpenAI, xAI Grok, custom endpoint
-- [ ] Adjustable thinking effort
-- [ ] Writing/voice style modes (Peaceful, Concise, ...)
-- [ ] Custom system prompt
+- [~] Brain not hardcoded to Claude: presets for llama-server, Ollama, Claude, OpenAI, xAI Grok, custom endpoint. v0.11.0 (ADR 0012): adapters, prefs, GraphQL and migration covered by tests (fake fetch); not tried against the real providers or in the running app
+- [~] Adjustable thinking effort. v0.11.0: request bodies per provider tested; real latency and provider acceptance not measured
+- [~] Writing/voice style modes (Peaceful, Concise, ...). v0.11.0: Tranquilo, Conciso, Detallado appended to the system prompt, tested; tone not judged on a live call
+- [~] Custom system prompt. v0.11.0: stored, validated (2000 chars) and appended, tested; UI not exercised in the app
 - [ ] CUA Driver to use the PC (#11)
 - [ ] OCR/vision model, candidates to evaluate (#11)
 
