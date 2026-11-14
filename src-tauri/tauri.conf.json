@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VoiceTalk",
+  "version": "0.8.0",
+  "identifier": "com.wefaber.voicetalk",
+  "build": {
+    "beforeDevCommand": "bun run web:dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VoiceTalk",
+        "width": 960,
+        "height": 640,
+        "minWidth": 480,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwMkIzMTg4QkQxM0E4NEEKUldSS3FCTzlpREVya09HaEl0VWdQRTFXUjRDOGZSc0hUNGRMOUEzaVQybWpPMytsY2YwV0M5TzkK",
+      "endpoints": [
+        "https://github.com/faku-org/VoiceTalk/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

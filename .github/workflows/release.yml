@@ -1,0 +1,49 @@
+name: Release
+
+# Tag `v*` builds the signed NSIS installer and publishes it, together with
+# `latest.json` (the updater manifest), to the GitHub Release of this repo.
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           content of the minisign private key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+# The matching public key is in src-tauri/tauri.conf.json (plugins.updater.pubkey).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: bun install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'VoiceTalk ${{ github.ref_name }}'
+          releaseBody: 'Descarga el instalador de los assets. Las instalaciones existentes se actualizan desde Preferencias > Actualizaciones.'
+          # Not a draft: the updater reads releases/latest/download/latest.json,
+          # and drafts are not served there.
+          releaseDraft: false
+          prerelease: false

@@ -17,6 +17,12 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,
+    // Loopback only; Tauri's devUrl points here (see src-tauri/tauri.conf.json).
+    host: '127.0.0.1',
+    port: 1420,
+    strictPort: true,
+    // The voice sidecar creates voice/.venv inside the repo; its files must not
+    // trigger page reloads in the webview.
+    watch: { ignored: ['**/voice/.venv/**', '**/src-tauri/target/**'] },
   },
 })
