@@ -84,6 +84,7 @@ export function registerPrefs(builder: AnyBuilder): void {
       fields: (t) => ({
         enabled: t.exposeBoolean('enabled'),
         consentAck: t.exposeBoolean('consentAck'),
+        nativeMic: t.exposeBoolean('nativeMic'),
       }),
     })
   const TtsVoices = builder
@@ -251,6 +252,7 @@ export function registerPrefs(builder: AnyBuilder): void {
     fields: (t) => ({
       enabled: t.boolean(),
       consentAck: t.boolean(),
+      nativeMic: t.boolean(),
     }),
   })
   const TtsVoicesInput = builder.inputType('TtsVoicePreferencesInput', {

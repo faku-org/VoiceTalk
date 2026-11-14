@@ -59,6 +59,8 @@ const captureShape = z.object({
   enabled: z.boolean(),
   /** The user confirmed the notice that recording others may need their consent. */
   consentAck: z.boolean(),
+  /** Call mic captured natively with echo cancellation against the system audio (ADR 0014). Off = webview mic. */
+  nativeMic: z.boolean(),
 })
 
 const voiceIdShape = z.string().trim().min(1).max(64)
@@ -127,7 +129,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   thresholds: { respondConfidence: 0.6, vadSensitivity: 0.5, endOfTurnMs: 700 },
   folders: [],
   location: { manual: '', ipGeolocation: false },
-  capture: { enabled: false, consentAck: false },
+  capture: { enabled: false, consentAck: false, nativeMic: false },
   theme: 'system',
   onboarding: null,
 }

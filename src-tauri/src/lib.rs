@@ -4,7 +4,8 @@ mod sidecar;
 use std::path::{Path, PathBuf};
 
 use capture::{
-    capture_list_sources, capture_start, capture_status, capture_stop, CaptureManager,
+    capture_list_sources, capture_start, capture_status, capture_stop, native_mic_start,
+    native_mic_stop, CaptureManager, NativeMicManager,
 };
 use sidecar::{Status, Supervisor};
 use tauri::{Manager, RunEvent, State};
@@ -42,11 +43,14 @@ pub fn run() {
             capture_list_sources,
             capture_start,
             capture_stop,
-            capture_status
+            capture_status,
+            native_mic_start,
+            native_mic_stop
         ])
         .setup(|app| {
             app.manage(Supervisor::start(repo_root()));
             app.manage(CaptureManager::default());
+            app.manage(NativeMicManager::default());
             Ok(())
         })
         .build(tauri::generate_context!())

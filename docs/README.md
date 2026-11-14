@@ -29,6 +29,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0011: User-selectable models](adr/0011-model-selection.md): Phonon-2.5 default STT, Canary/Fluid options, prefs applied to the runtime.
 - [0012: Brain presets](adr/0012-brain-presets.md): providers, thinking effort per provider, styles, custom system prompt, `brain` migration.
 - [0013: TTS providers](adr/0013-tts-providers.md): Cartesia and xAI adapters, voice picker with preview, `tts` prefs and migration, local TTS verdict.
+- [0014: Native microphone with echo cancellation](adr/0014-mic-aec.md): WASAPI mic + loopback reference, AEC3, RNNoise, `WS /call/mic`, opt-in.
 
 ## Design
 

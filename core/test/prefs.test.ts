@@ -153,6 +153,30 @@ describe('prefs store', () => {
     expect(() => store.update({ brain: 'gpt' })).toThrow(PreferencesError)
   })
 
+  test('nativeMic (ADR 0014) is off by default, patches alone and survives a file without it', () => {
+    expect(DEFAULT_PREFERENCES.capture.nativeMic).toBe(false)
+    writeFileSync(
+      join(dir, 'preferences.json'),
+      JSON.stringify({ capture: { enabled: true, consentAck: true } }),
+    )
+    const store = createPrefsStore(dir)
+    expect(store.get().capture).toEqual({
+      enabled: true,
+      consentAck: true,
+      nativeMic: false,
+    })
+    const next = store.update({ capture: { nativeMic: true } })
+    expect(next.capture).toEqual({
+      enabled: true,
+      consentAck: true,
+      nativeMic: true,
+    })
+    expect(createPrefsStore(dir).get().capture.nativeMic).toBe(true)
+    expect(() => store.update({ capture: { nativeMic: 'yes' } })).toThrow(
+      PreferencesError,
+    )
+  })
+
   test('has no secret fields', () => {
     // key material has no place in any nested object either
     expect(JSON.stringify(DEFAULT_PREFERENCES)).not.toMatch(
@@ -258,6 +282,21 @@ describe('GraphQL preferences', () => {
       'mutation { updatePreferences(input: { brain: claude }) { theme } }',
     )
     expect(res.errors?.length).toBeGreaterThan(0)
+  })
+
+  test('capture.nativeMic round-trips through GraphQL', async () => {
+    setPrefsStore(createPrefsStore(dir))
+    const before = await gql('{ preferences { capture { nativeMic } } }')
+    expect(before.data?.preferences.capture.nativeMic).toBe(false)
+    const after = await gql(
+      'mutation { updatePreferences(input: { capture: { nativeMic: true } }) { capture { enabled consentAck nativeMic } } }',
+    )
+    expect(after.errors).toBeUndefined()
+    expect(after.data?.updatePreferences.capture).toEqual({
+      enabled: false,
+      consentAck: false,
+      nativeMic: true,
+    })
   })
 
   test('keyStatus reports booleans only', async () => {
