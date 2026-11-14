@@ -7,6 +7,7 @@ import {
   loadLlmConfig,
   normalizeBaseUrl,
   parseSseLine,
+  stripThinkTags,
   type AnthropicStreamClient,
   type FetchLike,
 } from '../src/llm/index.ts'
@@ -201,5 +202,54 @@ describe('llm config', () => {
     ).toBe('http://127.0.0.1:8080')
     expect(normalizeBaseUrl('http://h:1/v1/')).toBe('http://h:1')
     expect(normalizeBaseUrl('http://h:1')).toBe('http://h:1')
+  })
+})
+
+describe('stripThinkTags', () => {
+  async function* from(parts: string[]): AsyncGenerator<string> {
+    for (const p of parts) yield p
+  }
+  const run = async (parts: string[]): Promise<string> => {
+    let out = ''
+    for await (const d of stripThinkTags(from(parts))) out += d
+    return out
+  }
+
+  test('drops a stray closing tag at the end of a reply', async () => {
+    expect(
+      await run(['¿Podrías repetir eso ', 'en una frase corta?', '</think>']),
+    ).toBe('¿Podrías repetir eso en una frase corta?')
+  })
+
+  test('drops a whole think block, even split across deltas', async () => {
+    expect(
+      await run([
+        '<thi',
+        'nk>plan: ser breve</th',
+        'ink>\n\nHola',
+        ', ¿cómo estás?',
+      ]),
+    ).toBe('\n\nHola, ¿cómo estás?')
+  })
+
+  test('keeps text that only looks like a tag prefix', async () => {
+    expect(await run(['a < b y c <', 't'])).toBe('a < b y c <t')
+  })
+
+  test('local provider strips tags from the stream', async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Listo."}}]}',
+      'data: {"choices":[{"delta":{"content":"</think>"}}]}',
+      'data: [DONE]',
+      '',
+    ].join('\n')
+    const chat = new OpenAiCompatChat({
+      baseUrl: 'http://x',
+      fetch: async () => new Response(body),
+    })
+    let out = ''
+    for await (const d of chat.stream([{ role: 'user', content: 'hola' }]))
+      out += d
+    expect(out).toBe('Listo.')
   })
 })
