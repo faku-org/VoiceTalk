@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useEffectEvent } from 'react'
 import {
   Check,
   CircleAlert,
@@ -47,17 +47,19 @@ export function AgentTimeline({
   const pendingId = pending?.id
   const running = steps.some((s) => s.kind === 'task' && s.status === 'running')
 
-  // Esc denies the pending permission, as the design says.
+  // Esc denies the pending permission, as the design says. The effect event keeps the listener from
+  // re-subscribing each time the parent hands a new callback.
+  const deny = useEffectEvent((id: string) => onApproval(id, 'deny'))
   useEffect(() => {
     if (!pendingId) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
       e.preventDefault()
-      onApproval(pendingId, 'deny')
+      deny(pendingId)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [pendingId, onApproval])
+  }, [pendingId])
 
   if (steps.length === 0) return null
 
