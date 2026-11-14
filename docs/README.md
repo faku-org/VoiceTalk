@@ -5,7 +5,7 @@ Voice companion desktop app (Tauri): voice chat with a cloud TTS and local STT, 
 ## Layout
 
 - `src-tauri/`: Tauri v2 shell. Spawns and health-checks the two sidecars, kills them on exit.
-- `src/`: React webview (sidecar status screen for now).
+- `src/`: React webview: app shell, onboarding, preferences (`src/app`, `src/features/*`).
 - `core/`: Bun sidecar (Elysia + GraphQL Yoga/Pothos). Holds the Cartesia key and streams TTS.
 - `voice/`: Python sidecar (uv, FastAPI). Silero VAD + Fluid Speech Pro STT over `WS /stt`, glossary post-correction.
 
@@ -17,6 +17,7 @@ Dev: `bun run tauri:dev`. Each sidecar also runs alone: `bun core/src/index.ts`,
 - [0002: Audio WebSocket outside GraphQL](adr/0002-audio-websocket.md)
 - [0003: Voice stack and the LFM text side](adr/0003-voice-stack.md): Phase 0 spike, latency numbers, model choices.
 - [0004: Cartesia cloud TTS](adr/0004-cartesia-cloud-tts.md)
+- [0007: App shell, preferences in core, OTA updates](adr/0007-app-shell-and-updates.md)
 
 ## Spikes
 

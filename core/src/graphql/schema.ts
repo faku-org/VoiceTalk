@@ -1,5 +1,6 @@
 import SchemaBuilder from '@pothos/core'
 import { VERSION } from '../version.ts'
+import { registerPrefs } from '../prefs/graphql.ts'
 
 interface Health {
   ok: boolean
@@ -23,5 +24,7 @@ builder.queryType({
     }),
   }),
 })
+
+registerPrefs(builder)
 
 export const schema = builder.toSchema()
