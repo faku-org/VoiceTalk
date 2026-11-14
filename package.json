@@ -1,8 +1,11 @@
 {
   "name": "voicetalk",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "core"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -12,10 +15,14 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "bun test --pass-with-no-tests",
-    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
     "animejs": "^4.5.0",
+    "lucide-react": "^1.72.0",
     "motion": "^14.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
@@ -25,7 +32,9 @@
     "@rolldown/plugin-babel": "^0.3.0",
     "@tailwindcss/postcss": "^4.3.5",
     "@tailwindcss/vite": "^4.3.5",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/babel__core": "^7.20.5",
+    "@types/bun": "^1.4.4",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

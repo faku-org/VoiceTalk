@@ -1,0 +1,18 @@
+[package]
+name = "voicetalk"
+version = "0.1.0"
+description = "VoiceTalk desktop shell (Tauri v2): supervises core (Bun) and voice (Python) sidecars"
+authors = ["Faku"]
+edition = "2021"
+publish = false
+
+[lib]
+name = "voicetalk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
