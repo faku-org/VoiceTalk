@@ -24,7 +24,8 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0006: Storage, ingest/RAG and read-only Code Mode](adr/0006-storage-ingest-codemode.md)
 - [0007: App shell, preferences in core, OTA updates](adr/0007-app-shell-and-updates.md)
 - [0008: Sessions, decision model and notes](adr/0008-notes.md)
-  n## Fixes batches
+
+## Fixes batches
 
 - [2026-11-14 (v0.6.0)](fixes-2026-11-14-v0.6.0/README.md): brain providers, voice providers, chat tab, dashboard, generative UI, CUA. Roadmap: [project 6](https://github.com/orgs/faku-org/projects/6).
 
