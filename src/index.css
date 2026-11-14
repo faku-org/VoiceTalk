@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @import '@wefaber/tokens/themes/azul.css';
 @import '@wefaber/tokens/theme.css';
+/* Bundled fonts (offline desktop app, no CDN). Both are SIL OFL 1.1; see DESIGN.md. */
+@import '@fontsource-variable/bricolage-grotesque/wght.css';
+@import '@fontsource/averia-serif-libre/latin-400.css';
+@import '@fontsource/averia-serif-libre/latin-400-italic.css';
+@import './styles/tokens.css';
 
 /*
  * Aliases for the first-skeleton token names (canvas / text-muted / hairline),
@@ -11,6 +16,20 @@
   --color-canvas: var(--bg);
   --color-text-muted: var(--text-muted);
   --color-hairline: var(--border);
+}
+
+@layer base {
+  /* View titles and headers use the display voice; everything else stays on the UI stack. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
 }
 
 html,

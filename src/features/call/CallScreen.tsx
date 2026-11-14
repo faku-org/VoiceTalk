@@ -36,14 +36,14 @@ export function CallScreen({ corePort }: { corePort: number | null }) {
   return (
     <section aria-labelledby="call-title" className="mt-10">
       <div className="flex items-center justify-between gap-4">
-        <h2 id="call-title" className="text-lg font-semibold">
+        <h2 id="call-title" className="text-h2 font-semibold">
           Llamada
         </h2>
         {inCall ? (
           <button
             type="button"
             onClick={stop}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-danger px-4 text-sm font-medium text-canvas"
+            className="inline-flex min-h-11 items-center gap-2 rounded-control bg-danger px-4 text-body-lg font-medium text-on-danger"
           >
             <PhoneOff className="size-4" aria-hidden="true" />
             Terminar
@@ -53,7 +53,7 @@ export function CallScreen({ corePort }: { corePort: number | null }) {
             type="button"
             onClick={() => void start()}
             disabled={corePort === null}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-medium text-canvas disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-control bg-accent px-4 text-body-lg font-medium text-on-accent disabled:opacity-50"
           >
             <Mic className="size-4" aria-hidden="true" />
             Iniciar llamada
@@ -116,13 +116,13 @@ export function CallScreen({ corePort }: { corePort: number | null }) {
           view.transcript.map((entry) => (
             <p
               key={entry.id}
-              className={`max-w-[85%] rounded-2xl border border-hairline px-4 py-2.5 text-sm ${
+              className={`chat max-w-[85%] rounded-card border border-border px-4 py-2.5 ${
                 entry.speaker === 'user'
                   ? 'ml-auto bg-surface'
                   : 'mr-auto bg-canvas'
               }`}
             >
-              <span className="mb-0.5 block text-xs text-text-muted">
+              <span className="mb-0.5 block font-sans text-meta text-muted">
                 {entry.speaker === 'user' ? 'Tú' : 'Asistente'}
               </span>
               {entry.text}
