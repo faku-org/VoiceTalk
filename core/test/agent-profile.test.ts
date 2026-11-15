@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   AGENT_TOOLSETS,
+  AUX_TASKS,
+  GUARDIAN_MODEL,
   configCommands,
   enabledToolsets,
   profileEnvValues,
@@ -112,8 +114,29 @@ describe('commands', () => {
     const flat = configCommands(setup).map((a) => a.join(' '))
     expect(flat).toContain('config set model.provider custom')
     expect(flat).toContain(`config set model.base_url ${setup.llmUrl}`)
-    expect(flat).toContain('config set approvals.mode manual')
+    expect(flat).toContain('config set approvals.mode smart')
     expect(flat).toContain('config set gateway.standalone true')
+  })
+  test('local: guardian inherits the local model, no aux data policy', () => {
+    const flat = configCommands(setup).map((a) => a.join(' '))
+    expect(flat).toContain('config set auxiliary.approval.provider auto')
+    expect(flat).toContain('config set auxiliary.approval.model ')
+    expect(flat).toContain('config set auxiliary.approval.extra_body {}')
+    expect(flat.join('\n')).not.toContain('data_collection')
+    expect(flat.join('\n')).not.toContain('openrouter')
+  })
+  test('openrouter: cheap guardian, data policy on every auxiliary task', () => {
+    const flat = configCommands(openrouter).map((a) => a.join(' '))
+    expect(flat).toContain('config set auxiliary.approval.provider openrouter')
+    expect(flat).toContain(
+      `config set auxiliary.approval.model ${GUARDIAN_MODEL}`,
+    )
+    for (const task of AUX_TASKS) {
+      expect(flat).toContain(
+        `config set auxiliary.${task}.extra_body {"provider":{"data_collection":"deny"}}`,
+      )
+    }
+    expect(flat).not.toContain('config set approvals.mode off')
   })
   test('openrouter: provider, model, data_collection deny; stale local url and key cleared', () => {
     const flat = configCommands(openrouter).map((a) => a.join(' '))
@@ -122,7 +145,7 @@ describe('commands', () => {
     expect(flat).toContain('config set provider_routing.data_collection deny')
     expect(flat).toContain('config set model.base_url ')
     expect(flat).toContain('config set model.api_key ')
-    expect(flat).toContain('config set approvals.mode manual')
+    expect(flat).toContain('config set approvals.mode smart')
     expect(flat.join('\n')).not.toContain('8080')
   })
   test('local: no provider_routing is set', () => {

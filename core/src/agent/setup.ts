@@ -43,6 +43,54 @@ export const DEFAULT_SETUP_MODELS: Record<AgentProvider, string> = {
 }
 export const OPENROUTER_KEY_VAR = 'OPENROUTER_API_KEY'
 
+/** Model of the `smart` approvals guardian (auxiliary task `approval`): one-word verdicts, so the cheapest one. */
+export const GUARDIAN_MODEL = 'deepseek/deepseek-v4.1-flash'
+
+/**
+ * Hermes auxiliary tasks that can run during an agent run or after it. Each is independent: the agent's
+ * `provider_routing` does not reach them (Hermes configuration docs, "OpenRouter routing"), so the data
+ * policy is repeated per task through `extra_body`. `approval` is the smart guardian.
+ */
+export const AUX_TASKS = [
+  'approval',
+  'vision',
+  'compression',
+  'title_generation',
+  'memory_query_rewrite',
+  'background_review',
+  'goal_judge',
+  'mcp',
+  'curator',
+] as const
+
+const AUX_DENY_DATA = '{"provider":{"data_collection":"deny"}}'
+
+/** Auxiliary task blocks: OpenRouter gets the data policy per task and a cheap guardian; local clears both. */
+function auxCommands(setup: ProfileSetup): string[][] {
+  const commands: string[][] = []
+  for (const task of AUX_TASKS) {
+    commands.push([
+      'config',
+      'set',
+      `auxiliary.${task}.extra_body`,
+      setup.provider === 'openrouter' ? AUX_DENY_DATA : '{}',
+    ])
+  }
+  if (setup.provider === 'openrouter') {
+    commands.push(
+      ['config', 'set', 'auxiliary.approval.provider', 'openrouter'],
+      ['config', 'set', 'auxiliary.approval.model', GUARDIAN_MODEL],
+    )
+  } else {
+    // Local: the guardian inherits the local model, so a flagged command never leaves the PC.
+    commands.push(
+      ['config', 'set', 'auxiliary.approval.provider', 'auto'],
+      ['config', 'set', 'auxiliary.approval.model', ''],
+    )
+  }
+  return commands
+}
+
 export function validateSetup(setup: ProfileSetup): void {
   assertNotDefault(PROFILE_NAME)
   if (setup.provider !== 'openrouter' && setup.provider !== 'local') {
@@ -101,14 +149,16 @@ function modelCommands(setup: ProfileSetup): string[][] {
   ]
 }
 
-/** `config set` calls: the model for the provider, manual approvals. Run through `withProfile`. */
+/** `config set` calls: the model for the provider, smart approvals, auxiliary tasks. Run through `withProfile`. */
 export function configCommands(setup: ProfileSetup): string[][] {
   validateSetup(setup)
   return [
     ...modelCommands(setup),
-    // Hermes' own filter decides what waits for the user (the approval step in the call timeline); commands it
-    // does not flag run unasked. `smart` adds a guardian LLM and `off` skips everything. See ADR 0017.
-    ['config', 'set', 'approvals.mode', 'manual'],
+    // Hermes' filter flags a command; a guardian LLM (auxiliary task `approval`) then approves, denies or escalates
+    // it to the user (the approval step in the call timeline). Unflagged commands run unasked. `off` skips
+    // everything and is never used. See ADR 0017.
+    ['config', 'set', 'approvals.mode', 'smart'],
+    ...auxCommands(setup),
     // Hermes v0.23 refuses a gateway per named profile unless it opts out of the host gateway (Faku's default
     // profile, cloud model). The key lives in the voicetalk config only; the host never serves this profile.
     // Temporary Hermes shim: see ADR 0017.

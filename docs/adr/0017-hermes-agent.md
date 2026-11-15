@@ -32,7 +32,9 @@ is idempotent and has `--dry-run`:
 | `model.provider` / `default` (default, `--provider openrouter`) | `openrouter`, `meta/muse-ember` (`--model`); `base_url` and `api_key` are cleared so no stale local value survives                    |
 | `provider_routing.data_collection`                              | `deny` (OpenRouter only, see Privacy)                                                                                                 |
 | `model.provider` / `base_url` / `default` (`--provider local`)  | `custom`, VoiceTalk's local LLM URL (`--llm-url`, env `VT_LLM_URL`, default `http://127.0.0.1:8080/v1`), `--model`                    |
-| `approvals.mode`                                                | `manual`: Hermes asks only what its dangerous-command filter flags (see Approvals)                                                    |
+| `approvals.mode`                                                | `smart`: the dangerous-command filter flags, a guardian LLM approves, denies or escalates (see Approvals)                             |
+| `auxiliary.approval.provider` / `model`                         | OpenRouter: `openrouter`, `deepseek/deepseek-v4.1-flash`. Local: `auto`, empty (inherits the local model)                             |
+| `auxiliary.<task>.extra_body` (9 tasks, see Approvals)          | OpenRouter: `provider.data_collection: deny` on each (the agent's `provider_routing` does not reach them). Local: `{}`                |
 | `gateway.standalone`                                            | `true` (see below)                                                                                                                    |
 | Toolsets on `api_server`                                        | only `computer_use`, `vision`, `file`, `terminal`; every other enabled toolset is disabled                                            |
 | `.env` of the profile                                           | `API_SERVER_ENABLED`, `API_SERVER_HOST=127.0.0.1`, `API_SERVER_PORT=8650`, `API_SERVER_KEY`, and with OpenRouter `OPENROUTER_API_KEY` |
@@ -113,40 +115,66 @@ When the agent is on, the webview calls `hermes_ensure(profile, url)`. The shell
 
 ### Approvals
 
-VoiceTalk adds no approval layer of its own. Approvals follow **Hermes' own dangerous-command filter** under
-`approvals.mode: manual`. Faku decided to keep that behavior as is. Hermes asks the user only when the filter flags
-something; the Runs API turns that into an approval event, and core shows it as the card in the timeline
-(`/v1/runs/{id}/approval`, only `once` or `deny`).
+VoiceTalk adds no approval layer of its own. The profile uses `approvals.mode: smart` (Faku's decision): **Hermes'
+dangerous-command filter, plus a guardian LLM that can approve on its own**. The filter flags a command; instead of
+asking the user right away, Hermes sends the command text to the guardian, which answers one word:
 
-**Asks** (read in Hermes 0.23.1, `tools/approval.py`, `tools/file_tools_write_guards.py`, computer-use handler):
+- `APPROVE`: the command runs, no card, nothing shown to the user.
+- `DENY`: the command is refused.
+- `ESCALATE` (uncertain, suspicious text, empty answer, any failure of the call): it falls back to asking the user. The
+  Runs API turns that into an approval event and core shows the card in the timeline (`/v1/runs/{id}/approval`, only
+  `once` or `deny`).
 
-- `terminal` commands that match a dangerous pattern, and content rules (credential upload, hidden Unicode). Seen in
-  the smoke: `powershell -Command ...` ("script execution via -e/-c flag").
+A command the filter does not flag never reaches the guardian and runs unasked, as under `manual`.
+
+**The guardian is the auxiliary task `approval`**, set explicitly in the profile (`bun run agent:profile`):
+
+- OpenRouter: `provider: openrouter`, model `deepseek/deepseek-v4.1-flash` (`GUARDIAN_MODEL`, the cheapest of the two
+  presets; the agent's own model is not used so a run on a pricier model does not make every check pricier). The call is
+  one-word, `max_tokens` 16, thinking off, timeout 30 s.
+- Local: `provider: auto`, empty model: it inherits the local model, so a flagged command never leaves the PC.
+
+**Data policy for auxiliary tasks.** Hermes does not carry the agent's `provider_routing` into auxiliary tasks (each is
+independent, see the Hermes configuration docs, "OpenRouter routing"). So the profile repeats it per task with
+`extra_body: {provider: {data_collection: deny}}` on `approval`, `vision`, `compression`, `title_generation`,
+`memory_query_rewrite`, `background_review`, `goal_judge`, `mcp` and `curator` (`AUX_TASKS`). With `--provider local` those
+blocks are cleared. Tasks outside that list stay at Hermes' defaults: none of them is expected during a run, but that is
+not verified. Hermes also logs `PAID lane engaged` for the guardian: its resolution goes through the OpenRouter lane,
+which is paid; that is expected.
+
+**Cost per check.** The guardian prompt is the system prompt (about 250 tokens) plus the flagged command, so roughly
+300 to 600 input tokens and at most 16 output tokens. At `deepseek/deepseek-v4.1-flash` prices (0.051 / 0.203 USD per
+million tokens) that is about **USD 0.00003 per check**, computed from the price list, not measured: the key's usage
+counter did not move at four decimals after three checks. Latency measured: 0.8 to 1.0 s, 5.7 s for the first call.
+Only flagged commands are checked.
+
+**What still asks the user** (read in Hermes 0.23.1, `tools/approval.py`, `tools/file_tools_write_guards.py`,
+computer-use handler):
+
+- `terminal` commands the filter flags **and** the guardian is unsure about or fails on. Nothing the guardian
+  approves reaches the user, so in practice a `powershell -Command Get-Date` no longer asks (smoke below).
 - `computer_use` actions that change the screen state: click (also double, right, middle), drag, scroll, type, key,
-  set value, focus app, bring to front.
-- `write_file` / `patch` only on protected paths: `~/.ssh/config` and agent-instruction files.
+  set value, focus app, bring to front. Not verified whether the guardian takes part in these: it is documented and
+  coded for terminal commands.
+- `write_file` / `patch` on protected paths only: `~/.ssh/config` and agent-instruction files. Not routed through the
+  guardian (it has its own gate).
 
-**Runs without asking:**
+**What runs without asking:**
 
-- `terminal` commands that match no pattern. Seen in the smoke: `cmd /c start notepad.exe` (opens an app) and
-  `tasklist`. Also `dir`, `type` and the like.
-- `computer_use` `capture`, `wait`, `list_apps`, `list_windows` (screenshots and window lists).
+- `terminal` commands that match no pattern: `cmd /c start notepad.exe` (opens an app), `tasklist`, `dir`, `type`.
+- Flagged commands the guardian approves, such as an innocuous `powershell -Command`.
+- `computer_use` `capture`, `wait`, `list_apps`, `list_windows`.
 - `read_file`, `search_files`, `vision_analyze`.
 - `write_file` / `patch` on ordinary paths (derived from the guards above, not exercised in the smoke).
 
-So "ask before anything that changes something" is **not** guaranteed: a shell command the filter does not know can
-change the machine silently. That is the accepted trade-off. Dangerous patterns, hard floors (`approvals.deny`,
-hardline blocks) and the protected paths still stop the run.
+So "ask before anything that changes something" is **not** guaranteed: an unflagged command can change the machine
+silently, and a flagged one can be approved by a model that sees only its text (it can be wrong or manipulated; the
+prompt tells it to ignore instructions inside the command). That is the accepted trade-off. Hard floors
+(`approvals.deny`, hardline blocks) and the protected paths still stop the run.
 
-**Not used:**
-
-- `smart`: a guardian LLM (auxiliary model, optional `approvals.smart_policy`) assesses what the filter flagged. It is
-  not the same behavior: it adds a model that sees the command text (cost, privacy) and can approve on its own.
-- `off`: bypasses every approval. Never.
-- A `pre_tool_call` Hermes plugin that escalates every command and click to approval: prototyped, then dropped by
-  decision and never committed. The profile has no plugins.
-
-Revisit if the accepted trade-off changes: the plugin route is the way to force approval without patching Hermes.
+**Not used:** `off` (bypasses every approval) and a `pre_tool_call` Hermes plugin that escalates every command and
+click to approval (prototyped, dropped by decision, never committed; the profile has no plugins). That plugin is the
+way to force approval without patching Hermes if the trade-off changes.
 
 ### Privacy
 
@@ -173,19 +201,23 @@ the PC.
 
 Real runs through core's `HermesClient`, provider `openrouter`, key without credits (free tier):
 
-| Run                                                                                       | Result                                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`                            | `HTTP 429: ... temporarily rate-limited upstream` (Google AI Studio), after 3 tries, 9 to 14 s; three attempts across the session                                                                                                                                                                                                                         |
-| `nvidia/nemotron-3.5-super-vl:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | `HTTP 404: No endpoints found matching your data policy (Free model training)`, 0.3 s                                                                                                                                                                                                                                                                     |
-| `inclusionai/ling-3.2-flash:free`, "Listá los archivos del Escritorio"                    | Completed in 21.7 s: one `terminal` call, the real Desktop listing. Tokens: input 13372, output 252, cache 0                                                                                                                                                                                                                                              |
-| same model, "Abrí el Bloc de notas", approvals approved via API                           | `cmd /c start notepad.exe` and two `tasklist` calls ran without a prompt; two `powershell -Command` calls asked for permission ("script execution via -e/-c flag") and were approved once through `/approval`; the run then failed with an upstream `429` at 86.9 s. After it, no Notepad process was running, so **that Notepad opened is not verified** |
-| `--provider local` on the OpenRouter profile (before the guard)                           | Ran on `openrouter.ai` with `meta/muse-ember`: 55371 input and 748 output tokens, about USD 0.006. This is why the guard exists                                                                                                                                                                                                                           |
+| Run                                                                                              | Result                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`                                   | `HTTP 429: ... temporarily rate-limited upstream` (Google AI Studio), after 3 tries, 9 to 14 s; three attempts across the session                                                                                                                                                                                                                         |
+| `nvidia/nemotron-3.5-super-vl:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`        | `HTTP 404: No endpoints found matching your data policy (Free model training)`, 0.3 s                                                                                                                                                                                                                                                                     |
+| `inclusionai/ling-3.2-flash:free`, "Listá los archivos del Escritorio"                           | Completed in 21.7 s: one `terminal` call, the real Desktop listing. Tokens: input 13372, output 252, cache 0                                                                                                                                                                                                                                              |
+| same model, "Abrí el Bloc de notas", approvals approved via API                                  | `cmd /c start notepad.exe` and two `tasklist` calls ran without a prompt; two `powershell -Command` calls asked for permission ("script execution via -e/-c flag") and were approved once through `/approval`; the run then failed with an upstream `429` at 86.9 s. After it, no Notepad process was running, so **that Notepad opened is not verified** |
+| `smart`, `inclusionai/ling-3.2-flash:free`, "Abrí el Bloc de notas" (`cmd /c start notepad.exe`) | Ran with no approval event: the filter does not flag it, so the guardian was not consulted. Notepad was running afterwards (confirmed, stopped by pid). 25.5 s; tokens in 34163 / out 428                                                                                                                                                                 |
+| same, `powershell -Command Get-Date`                                                             | Guardian consulted (`Auxiliary approval: using openrouter (deepseek/deepseek-v4.1-flash)` in `agent.log`), no approval event reached the client, the command ran: guardian approved. 11.4 s                                                                                                                                                               |
+| guardian called directly (`_smart_approve`, nothing executed)                                    | `powershell -Command Get-Date`: approve (5.7 s, first call). `... Remove-Item -Recurse -Force C:\Windows\System32`: **deny** (0.8 s). `... Get-ChildItem $env:USERPROFILE\Desktop \| Select -First 5`: approve (1.0 s)                                                                                                                                    |
+| `--provider local` on the OpenRouter profile (before the guard)                                  | Ran on `openrouter.ai` with `meta/muse-ember`: 55371 input and 748 output tokens, about USD 0.006. This is why the guard exists                                                                                                                                                                                                                           |
 
 ## Consequences
 
 - Off by default; nothing starts and no port is opened until the user enables it.
-- Only what Hermes' dangerous-command filter flags waits for the user (a visible card). Opening apps, `tasklist`,
-  screenshots and ordinary file writes run unasked. See Approvals.
+- `smart` approvals: what Hermes' dangerous-command filter flags goes to a cheap guardian model, which can approve it
+  alone; the user sees a card only when the guardian escalates or fails (about USD 0.00003 per check). Opening apps,
+  `tasklist`, screenshots and ordinary file writes run unasked. See Approvals.
 - A run's steps live only in the live call timeline; they are not persisted in session history yet.
 - With OpenRouter the agent costs money per run and needs `OPENROUTER_API_KEY`; the status line says when it is missing.
 
@@ -196,6 +228,10 @@ Real runs through core's `HermesClient`, provider `openrouter`, key without cred
 - A local VL model and its VRAM budget.
 - A smoke with `meta/muse-ember` and `deepseek/deepseek-v4.1-flash` once the key has credits, and a confirmed Notepad
   open.
+- Smart guardian, not yet observed live: the `ESCALATE` path (a card reaching the user), a `DENY` inside a real run
+  (only checked by calling the guardian directly: approve / deny / approve on three commands), that
+  `data_collection: deny` reaches OpenRouter on auxiliary calls (set in the profile, not seen on the wire), and
+  `auxiliary.free_only`. Measured cost per check (the key counter did not move).
 - A contractual ZDR route for OpenRouter, if Hermes ever exposes one.
 - Dropping `gateway.standalone` once Hermes supports profile gateways natively.
 - DESIGN.md also lists "Saltear": the timeline implements Permitir / No / Esc plus Detener (stop the task).
