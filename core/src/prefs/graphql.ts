@@ -72,6 +72,7 @@ export function registerPrefs(builder: AnyBuilder): void {
     .implement({
       fields: (t) => ({
         enabled: t.exposeBoolean('enabled'),
+        provider: t.exposeString('provider'),
         url: t.exposeString('url'),
         profile: t.exposeString('profile'),
         model: t.exposeString('model'),
@@ -300,6 +301,7 @@ export function registerPrefs(builder: AnyBuilder): void {
   const AgentInput = builder.inputType('AgentPreferenceInput', {
     fields: (t) => ({
       enabled: t.boolean(),
+      provider: t.string(),
       url: t.string(),
       profile: t.string(),
       model: t.string(),

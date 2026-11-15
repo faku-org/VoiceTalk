@@ -30,7 +30,13 @@ export function useHermesGateway(agent: AgentPreference | undefined) {
 
   useEffect(() => {
     // `agent` is rebuilt from the three fields below so the effect only runs when one of them changes.
-    const action = gatewayAction({ enabled, profile, url, model: '' })
+    const action = gatewayAction({
+      enabled,
+      provider: 'openrouter',
+      profile,
+      url,
+      model: '',
+    })
     const run =
       action.kind === 'ensure'
         ? invoke('hermes_ensure', { profile: action.profile, url: action.url })

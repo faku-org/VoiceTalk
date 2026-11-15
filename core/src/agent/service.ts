@@ -1,6 +1,13 @@
 import { getPrefsStore } from '../prefs/store.ts'
 import { HermesClient } from './client.ts'
-import { readAgentKey } from './profile.ts'
+import {
+  localProfileProblem,
+  readAgentKey,
+  readOpenRouterKey,
+  readProfileModel,
+  type AgentProvider,
+  type ProfileModel,
+} from './profile.ts'
 import {
   AgentError,
   type AgentEvent,
@@ -48,9 +55,27 @@ export interface AgentPort {
 
 export interface AgentServiceDeps {
   /** Live prefs, read on every call so the Preferencias changes apply without a restart. */
-  prefs: () => { enabled: boolean; url: string; model: string }
+  prefs: () => {
+    enabled: boolean
+    provider: AgentProvider
+    url: string
+    model: string
+  }
   key: () => string | undefined
+  /** OpenRouter key, only asked for when the provider is `openrouter`. Never exposed. */
+  openRouterKey?: () => string | undefined
+  /**
+   * Model block of the profile config, asked for when the provider is `local`. A profile set up for OpenRouter
+   * would send a `local` run to openrouter.ai, so such a run is refused. Left out, nothing is checked.
+   */
+  profileModel?: () => ProfileModel | undefined
   fetch?: typeof fetch
+}
+
+/** The Hermes provider id each pref value pins a run to, so a run never falls through to the other one. */
+const HERMES_PROVIDER: Record<AgentProvider, string> = {
+  openrouter: 'openrouter',
+  local: 'custom',
 }
 
 export function createAgentService(deps: AgentServiceDeps): AgentPort {
@@ -62,11 +87,16 @@ export function createAgentService(deps: AgentServiceDeps): AgentPort {
     return client
   }
 
+  const localProblem = (provider: AgentProvider): string | null =>
+    provider === 'local' && deps.profileModel
+      ? localProfileProblem(deps.profileModel())
+      : null
+
   return {
     enabled: () => deps.prefs().enabled,
 
     async status(): Promise<AgentStatus> {
-      const { enabled, url } = deps.prefs()
+      const { enabled, url, provider } = deps.prefs()
       const key = deps.key()
       if (!enabled) {
         return {
@@ -84,6 +114,18 @@ export function createAgentService(deps: AgentServiceDeps): AgentPort {
           reason: 'Falta la API key del perfil',
         }
       }
+      if (provider === 'openrouter' && !deps.openRouterKey?.()) {
+        return {
+          enabled,
+          hasKey: true,
+          online: false,
+          reason: 'Falta OPENROUTER_API_KEY',
+        }
+      }
+      const problem = localProblem(provider)
+      if (problem) {
+        return { enabled, hasKey: true, online: false, reason: problem }
+      }
       const health = await clientFor(url, key).health()
       return {
         enabled,
@@ -94,14 +136,20 @@ export function createAgentService(deps: AgentServiceDeps): AgentPort {
     },
 
     async run(task, sink, opts = {}) {
-      const { enabled, url, model } = deps.prefs()
+      const { enabled, url, model, provider } = deps.prefs()
       const key = deps.key()
       if (!enabled) throw new AgentError('Agent disabled')
       if (!key) throw new AgentError('Hermes API key not found')
+      if (provider === 'openrouter' && !deps.openRouterKey?.()) {
+        throw new AgentError('OPENROUTER_API_KEY not found')
+      }
+      const problem = localProblem(provider)
+      if (problem) throw new AgentError(problem)
       const client = clientFor(url, key)
       const runId = await client.start(task, {
         sessionKey: opts.sessionKey,
         model: model || undefined,
+        provider: HERMES_PROVIDER[provider],
       })
       const abort = new AbortController()
       let pending: ApprovalRequest | undefined
@@ -162,9 +210,16 @@ export function getAgentService(): AgentPort {
   shared ??= createAgentService({
     prefs: () => {
       const { agent } = getPrefsStore().get()
-      return { enabled: agent.enabled, url: agent.url, model: agent.model }
+      return {
+        enabled: agent.enabled,
+        provider: agent.provider,
+        url: agent.url,
+        model: agent.model,
+      }
     },
     key: () => readAgentKey(),
+    openRouterKey: () => readOpenRouterKey(),
+    profileModel: () => readProfileModel(),
   })
   return shared
 }

@@ -135,6 +135,7 @@ Ether is the character from `@wefaber/orb/rig` (0.2.0+): a dotted sphere with ey
 - While a capture or Discord session records, it shows everywhere and cannot be dismissed. On the desktop the **Island** takes its Recording state ("Grabando · Discord · 03:12 · Ver captura"); inside the app window the `RecordingBar` is pinned at the top of every view. Hard rule.
 - The Island and the chat dock are hidden from screen sharing and screenshots by default (switch in Preferencias). Hiding them never hides a recording from the user.
 - Capturing another app always passes a consent step that says what is recorded, where it is stored and who should be told.
+- The agent says where its model runs. With OpenRouter the Agente area shows, always and in the same place as the choice, "Las capturas de pantalla y tus pedidos al agente se envían a OpenRouter (sin retención de datos)." With a local model it says nothing leaves the PC. Never promise more than the routing delivers: "sin retención" means only providers that declare no storage or training (ADR 0017).
 - Screens that hold data name its place: "Se guarda en este equipo, en Documentos/VoiceTalk." Only the voice (Cartesia) and an optional cloud model leave the PC, and the UI says so where they are chosen.
 
 ## Layout

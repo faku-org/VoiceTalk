@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { gatewayAction } from './useHermesGateway'
+import type { AgentPreference } from './prefsTypes'
 
-const agent = {
+const agent: AgentPreference = {
   enabled: true,
+  provider: 'openrouter',
   url: ' http://127.0.0.1:8650 ',
   profile: ' voicetalk ',
   model: '',

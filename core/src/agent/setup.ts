@@ -3,9 +3,12 @@
 // voicetalk profile; the default profile is Faku's personal one and is never configured here.
 import { randomBytes } from 'node:crypto'
 import {
+  DEFAULT_AGENT_MODEL,
   DEFAULT_AGENT_PORT,
+  DEFAULT_AGENT_PROVIDER,
   PROFILE_NAME,
   assertNotDefault,
+  type AgentProvider,
 } from './profile.ts'
 
 /** The only toolsets the agent gets: eyes and hands on the desktop, files, shell. */
@@ -23,25 +26,38 @@ export const API_PLATFORM = 'api_server'
 const RESERVED_PORTS = new Set([8642])
 
 export interface ProfileSetup {
-  /** OpenAI-compatible base URL of the local llama-server (VoiceTalk's local LLM URL). */
+  /** Where the model runs. Default `openrouter`. */
+  provider: AgentProvider
+  /** OpenAI-compatible base URL of the local llama-server (VoiceTalk's local LLM URL). Local only. */
   llmUrl: string
-  /** Model id sent to that server. llama-server serves one model and ignores the name. */
+  /** OpenRouter model id, or the id sent to the local server (llama-server serves one model and ignores the name). */
   model: string
   port: number
 }
 
-export const DEFAULT_SETUP_MODEL = 'local'
+export const DEFAULT_SETUP_PROVIDER = DEFAULT_AGENT_PROVIDER
+/** Model written to the profile for each provider when `--model` is not given. */
+export const DEFAULT_SETUP_MODELS: Record<AgentProvider, string> = {
+  openrouter: DEFAULT_AGENT_MODEL,
+  local: 'local',
+}
+export const OPENROUTER_KEY_VAR = 'OPENROUTER_API_KEY'
 
 export function validateSetup(setup: ProfileSetup): void {
   assertNotDefault(PROFILE_NAME)
-  let url: URL
-  try {
-    url = new URL(setup.llmUrl)
-  } catch {
-    throw new Error(`Invalid LLM URL: ${setup.llmUrl}`)
+  if (setup.provider !== 'openrouter' && setup.provider !== 'local') {
+    throw new Error(`Invalid provider: ${String(setup.provider)}`)
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Invalid LLM URL: ${setup.llmUrl}`)
+  if (setup.provider === 'local') {
+    let url: URL
+    try {
+      url = new URL(setup.llmUrl)
+    } catch {
+      throw new Error(`Invalid LLM URL: ${setup.llmUrl}`)
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`Invalid LLM URL: ${setup.llmUrl}`)
+    }
   }
   if (!setup.model.trim()) throw new Error('Model id must not be empty')
   if (
@@ -62,15 +78,34 @@ export function withProfile(args: string[]): string[] {
   return ['-p', PROFILE_NAME, ...args]
 }
 
-/** `config set` calls: local model, manual approvals. Run through `withProfile`. */
-export function configCommands(setup: ProfileSetup): string[][] {
-  validateSetup(setup)
+/** The model block of the profile for the chosen provider. A rerun with the other provider overwrites every field. */
+function modelCommands(setup: ProfileSetup): string[][] {
+  if (setup.provider === 'openrouter') {
+    return [
+      ['config', 'set', 'model.provider', 'openrouter'],
+      ['config', 'set', 'model.default', setup.model],
+      // Clear what a local setup left behind, so OpenRouter is never sent to a stale URL or placeholder key.
+      ['config', 'set', 'model.base_url', ''],
+      ['config', 'set', 'model.api_key', ''],
+      // Only providers that do not keep or train on prompts and screenshots. Hermes has no ZDR switch for
+      // OpenRouter (only `data_collection`), so this is the strongest the agent can ask for. See ADR 0017.
+      ['config', 'set', 'provider_routing.data_collection', 'deny'],
+    ]
+  }
   return [
     ['config', 'set', 'model.provider', 'custom'],
     ['config', 'set', 'model.base_url', setup.llmUrl],
     ['config', 'set', 'model.default', setup.model],
     // Local servers need no key; a placeholder keeps the OpenAI client happy. Not a secret.
     ['config', 'set', 'model.api_key', 'local'],
+  ]
+}
+
+/** `config set` calls: the model for the provider, manual approvals. Run through `withProfile`. */
+export function configCommands(setup: ProfileSetup): string[][] {
+  validateSetup(setup)
+  return [
+    ...modelCommands(setup),
     // Writes, commands and clicks always wait for the user (the approval step in the call timeline).
     ['config', 'set', 'approvals.mode', 'manual'],
     // Hermes v0.23 refuses a gateway per named profile unless it opts out of the host gateway (Faku's default
@@ -117,19 +152,28 @@ export function generateKey(): string {
   return `vt_${randomBytes(32).toString('hex')}`
 }
 
-/** `.env` values of the profile. The key is kept when the profile already has one, so a rerun does not rotate it. */
+/**
+ * `.env` values of the profile. The API key is kept when the profile already has one, so a rerun does not rotate it.
+ * With OpenRouter, `openRouterKey` (read from the environment by the script) is copied in so the gateway does not
+ * depend on how it was launched; a missing one leaves whatever the profile already has.
+ */
 export function profileEnvValues(
   setup: ProfileSetup,
   existing: Record<string, string>,
   makeKey: () => string = generateKey,
+  openRouterKey?: string,
 ): Record<string, string> {
   validateSetup(setup)
-  return {
+  const values: Record<string, string> = {
     API_SERVER_ENABLED: 'true',
     API_SERVER_HOST: '127.0.0.1',
     API_SERVER_PORT: String(setup.port),
     API_SERVER_KEY: existing.API_SERVER_KEY?.trim() || makeKey(),
   }
+  const orKey = openRouterKey?.trim()
+  if (setup.provider === 'openrouter' && orKey)
+    values[OPENROUTER_KEY_VAR] = orKey
+  return values
 }
 
 export const DEFAULT_SETUP_PORT = DEFAULT_AGENT_PORT

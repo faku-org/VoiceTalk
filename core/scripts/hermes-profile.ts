@@ -1,10 +1,13 @@
 // Creates and configures the `voicetalk` Hermes profile (ADR 0017). Repeatable: a rerun only reapplies settings
 // and keeps the existing API key.
 //
-//   bun core/scripts/hermes-profile.ts [--llm-url <url>] [--model <id>] [--port <n>] [--dry-run]
+//   bun core/scripts/hermes-profile.ts [--provider openrouter|local] [--model <id>] [--llm-url <url>] [--port <n>] [--dry-run]
+//
+// `openrouter` (default) needs OPENROUTER_API_KEY in the environment (on Windows the user env is read too); it is
+// copied into the profile .env. `local` points at a local OpenAI-compatible server (`--llm-url`).
 //
 // Safety: only the `voicetalk` profile is addressed (assertNotDefault). The default profile's config.yaml, .env
-// and gateway are never read or written. The API key goes to the profile .env and is never printed.
+// and gateway are never read or written. No key is ever printed.
 import {
   chmodSync,
   existsSync,
@@ -14,8 +17,10 @@ import {
 } from 'node:fs'
 import { dirname } from 'node:path'
 import {
-  DEFAULT_SETUP_MODEL,
+  DEFAULT_SETUP_MODELS,
   DEFAULT_SETUP_PORT,
+  DEFAULT_SETUP_PROVIDER,
+  OPENROUTER_KEY_VAR,
   configCommands,
   profileEnvValues,
   toolsetCommands,
@@ -25,6 +30,7 @@ import {
   type ProfileSetup,
 } from '../src/agent/setup.ts'
 import {
+  AGENT_PROVIDERS,
   PROFILE_NAME,
   assertNotDefault,
   hermesBin,
@@ -32,6 +38,7 @@ import {
   profileDir,
   profileEnvPath,
   upsertEnv,
+  type AgentProvider,
 } from '../src/agent/profile.ts'
 
 const DEFAULT_LLM_URL = 'http://127.0.0.1:8080/v1'
@@ -39,6 +46,29 @@ const DEFAULT_LLM_URL = 'http://127.0.0.1:8080/v1'
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(name)
   return i >= 0 ? argv[i + 1] : undefined
+}
+
+/** The key from this process's env; on Windows also the user-level variable (a shell started earlier lacks it). */
+async function findOpenRouterKey(): Promise<string | undefined> {
+  const direct = process.env[OPENROUTER_KEY_VAR]?.trim()
+  if (direct) return direct
+  if (process.platform !== 'win32') return undefined
+  try {
+    const proc = Bun.spawn(
+      [
+        'powershell',
+        '-NoProfile',
+        '-Command',
+        `[Environment]::GetEnvironmentVariable('${OPENROUTER_KEY_VAR}','User')`,
+      ],
+      { stdout: 'pipe', stderr: 'ignore' },
+    )
+    const out = (await new Response(proc.stdout).text()).trim()
+    await proc.exited
+    return out || undefined
+  } catch {
+    return undefined
+  }
 }
 
 async function hermes(bin: string, args: string[]): Promise<string> {
@@ -63,10 +93,18 @@ async function hermes(bin: string, args: string[]): Promise<string> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
   const dryRun = argv.includes('--dry-run')
+  const provider = (flag(argv, '--provider') ??
+    DEFAULT_SETUP_PROVIDER) as AgentProvider
+  if (!AGENT_PROVIDERS.includes(provider)) {
+    throw new Error(
+      `Invalid --provider "${provider}": use ${AGENT_PROVIDERS.join(' or ')}`,
+    )
+  }
   const setup: ProfileSetup = {
+    provider,
     llmUrl:
       flag(argv, '--llm-url') ?? process.env.VT_LLM_URL ?? DEFAULT_LLM_URL,
-    model: flag(argv, '--model') ?? DEFAULT_SETUP_MODEL,
+    model: flag(argv, '--model') ?? DEFAULT_SETUP_MODELS[provider],
     port: Number(flag(argv, '--port') ?? DEFAULT_SETUP_PORT),
   }
   assertNotDefault(PROFILE_NAME)
@@ -103,11 +141,21 @@ async function main(): Promise<void> {
   const envPath = profileEnvPath()
   const current = existsSync(envPath) ? readFileSync(envPath, 'utf8') : ''
   const existing = parseEnv(current)
-  const values = profileEnvValues(setup, existing)
+  const orKey =
+    setup.provider === 'openrouter' ? await findOpenRouterKey() : undefined
+  const values = profileEnvValues(setup, existing, undefined, orKey)
   const hadKey = Boolean(existing.API_SERVER_KEY?.trim())
+  const orState =
+    setup.provider !== 'openrouter'
+      ? ''
+      : orKey
+        ? `, ${OPENROUTER_KEY_VAR} copied (not shown)`
+        : existing[OPENROUTER_KEY_VAR]?.trim()
+          ? `, ${OPENROUTER_KEY_VAR} kept`
+          : `, ${OPENROUTER_KEY_VAR} MISSING (set it in the user environment and rerun)`
   if (dryRun) {
     console.log(
-      `.env: would set API_SERVER_ENABLED, API_SERVER_HOST, API_SERVER_PORT=${setup.port}, API_SERVER_KEY (${hadKey ? 'kept' : 'generated'})`,
+      `.env: would set API_SERVER_ENABLED, API_SERVER_HOST, API_SERVER_PORT=${setup.port}, API_SERVER_KEY (${hadKey ? 'kept' : 'generated'})${orState}`,
     )
   } else {
     mkdirSync(dirname(envPath), { recursive: true })
@@ -118,7 +166,7 @@ async function main(): Promise<void> {
       // Windows: ACLs of the profile folder apply.
     }
     console.log(
-      `.env: API server 127.0.0.1:${setup.port}, API_SERVER_KEY ${hadKey ? 'kept' : 'generated'} (not shown)`,
+      `.env: API server 127.0.0.1:${setup.port}, API_SERVER_KEY ${hadKey ? 'kept' : 'generated'} (not shown)${orState}`,
     )
   }
 
@@ -126,7 +174,9 @@ async function main(): Promise<void> {
     [
       '',
       `profile: ${PROFILE_NAME} (${dir})`,
-      `model: ${setup.model} @ ${setup.llmUrl}`,
+      setup.provider === 'openrouter'
+        ? `model: ${setup.model} @ OpenRouter (data_collection: deny)`
+        : `model: ${setup.model} @ ${setup.llmUrl}`,
       `url: http://127.0.0.1:${setup.port}`,
       `start: hermes -p ${PROFILE_NAME} gateway run   (the VoiceTalk shell does this when the agent is enabled)`,
     ].join('\n'),

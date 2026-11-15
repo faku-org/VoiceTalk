@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { HermesClient, toAgentEvent } from '../src/agent/client.ts'
 import { readSse } from '../src/agent/sse.ts'
+import { localProfileProblem, type ProfileModel } from '../src/agent/profile.ts'
 import { createAgentService } from '../src/agent/service.ts'
 import { AgentError, type AgentEvent } from '../src/agent/types.ts'
 
@@ -137,6 +138,25 @@ describe('toAgentEvent', () => {
       type: 'completed',
       output: 'listo',
     })
+    // Token counters ride on the terminal frame; all-zero or missing ones add nothing.
+    expect(
+      toAgentEvent({
+        event: 'run.completed',
+        output: 'listo',
+        usage: {
+          input_tokens: 1200,
+          output_tokens: 80,
+          cache_read_tokens: 900,
+        },
+      }),
+    ).toEqual({
+      type: 'completed',
+      output: 'listo',
+      usage: { inputTokens: 1200, outputTokens: 80, cacheReadTokens: 900 },
+    })
+    expect(
+      toAgentEvent({ event: 'run.completed', output: 'x', usage: {} }),
+    ).toEqual({ type: 'completed', output: 'x' })
     expect(toAgentEvent({ event: 'run.error', error: 'boom' })).toEqual({
       type: 'failed',
       error: 'boom',
@@ -284,8 +304,13 @@ describe('HermesClient', () => {
 
 describe('AgentService', () => {
   const prefs =
-    (url: string, enabled = true) =>
-    () => ({ enabled, url, model: '' })
+    (
+      url: string,
+      enabled = true,
+      provider: 'local' | 'openrouter' = 'local',
+      model = '',
+    ) =>
+    () => ({ enabled, provider, url, model })
 
   test('status: disabled, no key, online', async () => {
     const fake = fakeHermes()
@@ -309,6 +334,103 @@ describe('AgentService', () => {
       hasKey: true,
       online: true,
     })
+  })
+
+  test('openrouter: status asks for the OpenRouter key, never exposes it', async () => {
+    const fake = fakeHermes()
+    const svc = (or: string | undefined) =>
+      createAgentService({
+        prefs: prefs(fake.url, true, 'openrouter'),
+        key: () => KEY,
+        openRouterKey: () => or,
+      })
+    expect(await svc(undefined).status()).toMatchObject({
+      online: false,
+      reason: 'Falta OPENROUTER_API_KEY',
+    })
+    const ok = await svc('sk-or-secret').status()
+    expect(ok.online).toBe(true)
+    expect(JSON.stringify(ok)).not.toContain('sk-or-secret')
+    const err = await svc(undefined)
+      .run('x', () => undefined)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(AgentError)
+  })
+
+  test('each run pins its provider and model so it cannot fall through to the other one', async () => {
+    const fake = fakeHermes()
+    const start = async (
+      provider: 'local' | 'openrouter',
+      model: string,
+    ): Promise<Record<string, unknown>> => {
+      fake.calls.length = 0
+      const svc = createAgentService({
+        prefs: prefs(fake.url, true, provider, model),
+        key: () => KEY,
+        openRouterKey: () => 'sk-or-x',
+      })
+      const run = await svc.run('x', () => undefined)
+      await run.done
+      return fake.calls.find((c) => c.path === '/v1/runs')?.body as Record<
+        string,
+        unknown
+      >
+    }
+    expect(await start('openrouter', 'meta/muse-ember')).toMatchObject({
+      provider: 'openrouter',
+      model: 'meta/muse-ember',
+    })
+    const local = await start('local', '')
+    expect(local.provider).toBe('custom')
+    expect(local.model).toBeUndefined()
+  })
+
+  test('local: a profile set up for OpenRouter is refused, since Hermes would still reach openrouter.ai', async () => {
+    const fake = fakeHermes()
+    const svc = (model: ProfileModel | undefined) =>
+      createAgentService({
+        prefs: prefs(fake.url, true, 'local'),
+        key: () => KEY,
+        profileModel: () => model,
+      })
+    const stale: ProfileModel = { provider: 'openrouter', baseUrl: '' }
+    expect(await svc(stale).status()).toMatchObject({ online: false })
+    expect((await svc(stale).status()).reason).toContain('modelo local')
+    fake.calls.length = 0
+    const err = await svc(stale)
+      .run('x', () => undefined)
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(AgentError)
+    // Nothing was sent to Hermes.
+    expect(fake.calls.some((c) => c.path === '/v1/runs')).toBe(false)
+    const ok: ProfileModel = {
+      provider: 'custom',
+      baseUrl: 'http://127.0.0.1:8080/v1',
+    }
+    const run = await svc(ok).run('x', () => undefined)
+    await run.done
+    expect(fake.calls.some((c) => c.path === '/v1/runs')).toBe(true)
+  })
+
+  test('localProfileProblem: only a custom provider on a loopback URL passes', () => {
+    const custom = (baseUrl: string): ProfileModel => ({
+      provider: 'custom',
+      baseUrl,
+    })
+    expect(localProfileProblem(custom('http://127.0.0.1:8080/v1'))).toBeNull()
+    expect(localProfileProblem(custom('http://localhost:8080/v1'))).toBeNull()
+    expect(localProfileProblem(custom('http://[::1]:8080/v1'))).toBeNull()
+    expect(
+      localProfileProblem(custom('https://openrouter.ai/api/v1')),
+    ).not.toBeNull()
+    expect(localProfileProblem(custom(''))).not.toBeNull()
+    expect(
+      localProfileProblem({
+        provider: 'openrouter',
+        baseUrl: 'http://127.0.0.1:8080/v1',
+      }),
+    ).not.toBeNull()
+    expect(localProfileProblem(undefined)).not.toBeNull()
   })
 
   test('run pumps events to the sink and tracks the pending approval', async () => {

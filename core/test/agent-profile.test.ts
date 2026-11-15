@@ -16,12 +16,21 @@ import {
   parseEnv,
   profileDir,
   readAgentKey,
+  readOpenRouterKey,
   upsertEnv,
 } from '../src/agent/profile.ts'
 
 const setup: ProfileSetup = {
+  provider: 'local',
   llmUrl: 'http://127.0.0.1:8080/v1',
   model: 'local',
+  port: 8650,
+}
+
+const openrouter: ProfileSetup = {
+  provider: 'openrouter',
+  llmUrl: 'http://127.0.0.1:8080/v1',
+  model: 'meta/muse-ember',
   port: 8650,
 }
 
@@ -85,6 +94,10 @@ describe('validateSetup', () => {
     expect(() => validateSetup({ ...setup, llmUrl: 'ftp://x/v1' })).toThrow()
     expect(() => validateSetup({ ...setup, model: ' ' })).toThrow()
   })
+  test('openrouter ignores the local URL; unknown providers are rejected', () => {
+    expect(() => validateSetup({ ...openrouter, llmUrl: 'nope' })).not.toThrow()
+    expect(() => validateSetup({ ...setup, provider: 'x' as never })).toThrow()
+  })
 })
 
 describe('commands', () => {
@@ -101,6 +114,20 @@ describe('commands', () => {
     expect(flat).toContain(`config set model.base_url ${setup.llmUrl}`)
     expect(flat).toContain('config set approvals.mode manual')
     expect(flat).toContain('config set gateway.standalone true')
+  })
+  test('openrouter: provider, model, data_collection deny; stale local url and key cleared', () => {
+    const flat = configCommands(openrouter).map((a) => a.join(' '))
+    expect(flat).toContain('config set model.provider openrouter')
+    expect(flat).toContain('config set model.default meta/muse-ember')
+    expect(flat).toContain('config set provider_routing.data_collection deny')
+    expect(flat).toContain('config set model.base_url ')
+    expect(flat).toContain('config set model.api_key ')
+    expect(flat).toContain('config set approvals.mode manual')
+    expect(flat.join('\n')).not.toContain('8080')
+  })
+  test('local: no provider_routing is set', () => {
+    const flat = configCommands(setup).map((a) => a.join(' '))
+    expect(flat.join('\n')).not.toContain('provider_routing')
   })
   test('enabledToolsets parses the listing', () => {
     expect(enabledToolsets(LISTING)).toEqual([
@@ -146,6 +173,25 @@ describe('env', () => {
     expect(values.API_SERVER_KEY).toBe(key)
     const cmds = [...configCommands(setup), ...toolsetCommands(LISTING)]
     expect(JSON.stringify(cmds)).not.toContain(key)
+  })
+  test('openrouter: the OpenRouter key is copied to the .env only, never into a command', () => {
+    const key = 'sk-or-v1-SECRET'
+    const values = profileEnvValues(openrouter, {}, () => 'k', key)
+    expect(values.OPENROUTER_API_KEY).toBe(key)
+    expect(JSON.stringify(configCommands(openrouter))).not.toContain(key)
+    // Local never carries it; a missing key adds nothing (the profile keeps what it had).
+    expect(
+      profileEnvValues(setup, {}, () => 'k', key).OPENROUTER_API_KEY,
+    ).toBeUndefined()
+    expect(
+      profileEnvValues(openrouter, {}, () => 'k').OPENROUTER_API_KEY,
+    ).toBeUndefined()
+  })
+  test('readOpenRouterKey: env var wins, missing profile gives undefined', () => {
+    expect(readOpenRouterKey({ OPENROUTER_API_KEY: ' k ' })).toBe('k')
+    expect(
+      readOpenRouterKey({ HERMES_HOME: 'Z:\\does-not-exist' }),
+    ).toBeUndefined()
   })
   test('upsertEnv replaces in place, appends, keeps others', () => {
     const out = upsertEnv('A=1\n# c\nB=2\n', { B: '3', C: '4' })

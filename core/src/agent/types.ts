@@ -29,6 +29,13 @@ export interface ApprovalRequest {
   command: string | undefined
 }
 
+/** Token counters Hermes reports when a run ends. Absent when the server sends none. */
+export interface AgentUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+}
+
 export type AgentEvent =
   | { type: 'started'; runId: string }
   | { type: 'delta'; text: string }
@@ -36,7 +43,7 @@ export type AgentEvent =
   | { type: 'tool_done'; name: string; failed: boolean }
   | { type: 'approval'; request: ApprovalRequest }
   | { type: 'approval_settled'; choice: string | undefined }
-  | { type: 'completed'; output: string }
+  | { type: 'completed'; output: string; usage?: AgentUsage }
   | { type: 'failed'; error: string }
   | { type: 'cancelled' }
 
@@ -59,6 +66,8 @@ export interface StartRunOptions {
   sessionKey?: string
   /** Per-request model override (agent model pref). */
   model?: string
+  /** Per-request Hermes provider id (`openrouter`, `custom`). Pins the run so it cannot fall back to another. */
+  provider?: string
   signal?: AbortSignal
 }
 

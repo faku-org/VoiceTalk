@@ -4,6 +4,7 @@ import {
   type AgentCapabilities,
   type AgentEvent,
   type AgentHealth,
+  type AgentUsage,
   type ApprovalChoice,
   type ApprovalRequest,
   type StartRunOptions,
@@ -55,7 +56,11 @@ export function toAgentEvent(frame: Json): AgentEvent | null {
         choice: text(frame.choice) || undefined,
       }
     case 'run.completed':
-      return { type: 'completed', output: text(frame.output) }
+      return {
+        type: 'completed',
+        output: text(frame.output),
+        ...toUsage(frame.usage),
+      }
     case 'run.failed':
     case 'run.error':
       return {
@@ -69,6 +74,24 @@ export function toAgentEvent(frame: Json): AgentEvent | null {
     default:
       return null
   }
+}
+
+function count(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0
+}
+
+/** `{ usage }` when Hermes sent counters, nothing otherwise, so a frame without them maps to the same event as before. */
+function toUsage(raw: unknown): { usage: AgentUsage } | Record<string, never> {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const u = raw as Json
+  const usage = {
+    inputTokens: count(u.input_tokens),
+    outputTokens: count(u.output_tokens),
+    cacheReadTokens: count(u.cache_read_tokens),
+  }
+  return usage.inputTokens || usage.outputTokens || usage.cacheReadTokens
+    ? { usage }
+    : {}
 }
 
 function toApprovalRequest(frame: Json): ApprovalRequest {
@@ -181,6 +204,7 @@ export class HermesClient {
   async start(input: string, opts: StartRunOptions = {}): Promise<string> {
     const body: Json = { input }
     if (opts.model) body.model = opts.model
+    if (opts.provider) body.provider = opts.provider
     if (opts.sessionKey) body.session_id = opts.sessionKey
     const res = await this.json('POST', '/v1/runs', body)
     const id = text(res.run_id)

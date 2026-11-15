@@ -13,7 +13,13 @@ import {
   STYLES,
   SYSTEM_PROMPT_MAX,
 } from '../llm/presets.ts'
-import { DEFAULT_AGENT_URL, PROFILE_NAME } from '../agent/profile.ts'
+import {
+  AGENT_PROVIDERS,
+  DEFAULT_AGENT_MODEL,
+  DEFAULT_AGENT_PROVIDER,
+  DEFAULT_AGENT_URL,
+  PROFILE_NAME,
+} from '../agent/profile.ts'
 
 const PLATFORM_KEYS = Object.keys(PLATFORMS) as [PlatformKey, ...PlatformKey[]]
 
@@ -112,6 +118,8 @@ const brainShape = z.object({
 const agentShape = z.object({
   /** Opt-in: hand action requests to Hermes. Off by default. */
   enabled: z.boolean(),
+  /** Where the agent's model runs. `openrouter` (default) sends screenshots and requests to OpenRouter. */
+  provider: z.enum(AGENT_PROVIDERS),
   /** Hermes API server of the profile (loopback). */
   url: httpUrl,
   /** Hermes profile the shell starts. Never `default`: that one is the user's personal profile. */
@@ -125,7 +133,7 @@ const agentShape = z.object({
       (v) => v.toLowerCase() !== 'default',
       'No se puede usar el perfil default.',
     ),
-  /** Model for the agent (a vision-capable one for computer use). Empty = the profile's own model. */
+  /** Model for the agent (needs image input and tools). Empty = the profile's own model. */
   model: z.string().trim().max(120),
 })
 
@@ -165,9 +173,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   brain: DEFAULT_BRAIN,
   agent: {
     enabled: false,
+    provider: DEFAULT_AGENT_PROVIDER,
     url: DEFAULT_AGENT_URL,
     profile: PROFILE_NAME,
-    model: '',
+    model: DEFAULT_AGENT_MODEL,
   },
   llmUrl: DEFAULT_LLM_URL,
   tts: { provider: DEFAULT_TTS_PROVIDER, voices: defaultTtsVoices() },

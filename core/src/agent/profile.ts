@@ -9,6 +9,15 @@ export const PROFILE_NAME = 'voicetalk'
 export const DEFAULT_AGENT_PORT = 8650
 export const DEFAULT_AGENT_URL = `http://127.0.0.1:${DEFAULT_AGENT_PORT}`
 
+/** Where the agent's model runs: a local server, or OpenRouter (default). */
+export const AGENT_PROVIDERS = ['local', 'openrouter'] as const
+export type AgentProvider = (typeof AGENT_PROVIDERS)[number]
+export const DEFAULT_AGENT_PROVIDER: AgentProvider = 'openrouter'
+/** Needs image input and tool calling. Price per million tokens in/cache/out: 0.10 / 0.004 / 0.50 USD. */
+export const DEFAULT_AGENT_MODEL = 'meta/muse-ember'
+/** Cheaper alternative with image and tools: 0.051 / 0.001 / 0.203 USD. */
+export const ALT_AGENT_MODEL = 'deepseek/deepseek-v4.1-flash'
+
 type Env = Record<string, string | undefined>
 
 /** Throws on any profile name that could resolve to Faku's personal profile. Case-insensitive. */
@@ -97,6 +106,74 @@ export function upsertEnv(src: string, values: Record<string, string>): string {
   while (lines.length && lines[lines.length - 1] === '') lines.pop()
   for (const [key, value] of pending) lines.push(`${key}=${value}`)
   return `${lines.join('\n')}\n`
+}
+
+/**
+ * OpenRouter key: the process env wins (the gateway inherits it), else the voicetalk profile's .env.
+ * Undefined when neither has it. Never log it.
+ */
+export function readOpenRouterKey(env: Env = process.env): string | undefined {
+  const direct = env.OPENROUTER_API_KEY?.trim()
+  if (direct) return direct
+  try {
+    const path = profileEnvPath(PROFILE_NAME, env)
+    if (!existsSync(path)) return undefined
+    return (
+      parseEnv(readFileSync(path, 'utf8')).OPENROUTER_API_KEY?.trim() ||
+      undefined
+    )
+  } catch {
+    return undefined
+  }
+}
+
+/** The `model:` block of the profile config that decides where a run goes. */
+export interface ProfileModel {
+  provider: string
+  baseUrl: string
+}
+
+/** Reads `model.provider` and `model.base_url` from the voicetalk profile `config.yaml`. Undefined when unreadable. */
+export function readProfileModel(
+  env: Env = process.env,
+): ProfileModel | undefined {
+  try {
+    const path = join(profileDir(PROFILE_NAME, env), 'config.yaml')
+    if (!existsSync(path)) return undefined
+    const doc = Bun.YAML.parse(readFileSync(path, 'utf8')) as {
+      model?: { provider?: unknown; base_url?: unknown }
+    } | null
+    const model = doc?.model
+    if (!model) return undefined
+    return {
+      provider: typeof model.provider === 'string' ? model.provider : '',
+      baseUrl: typeof model.base_url === 'string' ? model.base_url : '',
+    }
+  } catch {
+    return undefined
+  }
+}
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+
+/**
+ * Why a `local` run would not stay on this PC, or null when the profile points at a loopback server.
+ * Hermes takes no base URL per request: a `custom` run on a profile set up for OpenRouter would still reach
+ * openrouter.ai (seen in the real smoke), so core refuses it first.
+ */
+export function localProfileProblem(
+  model: ProfileModel | undefined,
+): string | null {
+  const fix = 'Corré bun run agent:profile --provider local.'
+  if (!model) return `No se pudo leer la configuración del perfil. ${fix}`
+  let host = ''
+  try {
+    host = new URL(model.baseUrl).hostname
+  } catch {
+    // Empty or malformed: not a loopback server.
+  }
+  if (model.provider === 'custom' && LOOPBACK_HOSTS.has(host)) return null
+  return `El perfil de Hermes no está configurado para un modelo local. ${fix}`
 }
 
 /**

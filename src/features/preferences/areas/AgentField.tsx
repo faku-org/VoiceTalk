@@ -2,12 +2,32 @@ import { useEffect, useState } from 'react'
 import { CircleCheck, CircleX, LoaderCircle } from 'lucide-react'
 import { Field, Switch, inputClass } from '@/app/ui'
 import { gql } from '@/app/coreClient'
-import type { AgentStatus } from '@/app/prefsTypes'
+import type { AgentProvider, AgentStatus } from '@/app/prefsTypes'
 
 const STATUS_QUERY = `{ agentStatus { enabled hasKey online reason } }`
 
+/** Both take image input and tools. Prices are USD per million tokens (input / output), from OpenRouter. */
+const OPENROUTER_MODELS = [
+  {
+    id: 'meta/muse-ember',
+    name: 'Muse Ember',
+    hint: 'Predeterminado. USD 0,10 de entrada y 0,50 de salida por millón de tokens.',
+  },
+  {
+    id: 'deepseek/deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    hint: 'Más barato. USD 0,051 de entrada y 0,203 de salida por millón de tokens.',
+  },
+] as const
+const DEFAULT_OPENROUTER_MODEL = OPENROUTER_MODELS[0].id
+const CUSTOM = '__custom__'
+
+export const OPENROUTER_PRIVACY =
+  'Las capturas de pantalla y tus pedidos al agente se envían a OpenRouter (sin retención de datos).'
+
 export interface AgentDraft {
   enabled: boolean
+  provider: AgentProvider
   url: string
   profile: string
   model: string
@@ -71,6 +91,21 @@ export function AgentField({
   savedKey: unknown
 }) {
   const status = useAgentStatus(savedKey)
+  const [customChosen, setCustomChosen] = useState(false)
+  const openrouter = draft.provider === 'openrouter'
+  const preset = OPENROUTER_MODELS.find((m) => m.id === draft.model)
+  const custom = openrouter && (customChosen || !preset)
+
+  // Presets only mean something on OpenRouter: leaving it clears them, coming back restores the default.
+  const changeProvider = (provider: AgentProvider) => {
+    if (provider === draft.provider) return
+    setCustomChosen(false)
+    if (provider === 'local') {
+      onChange({ provider, model: preset ? '' : draft.model })
+    } else {
+      onChange({ provider, model: draft.model || DEFAULT_OPENROUTER_MODEL })
+    }
+  }
 
   return (
     <fieldset className="space-y-4">
@@ -135,23 +170,90 @@ export function AgentField({
       </Field>
 
       <Field
-        label="Modelo del agente"
-        htmlFor="agent-model"
-        hint="Aparte del cerebro de la voz. Para usar la pantalla necesita un modelo con visión; vacío usa el del perfil."
-        error={errors.model}
+        label="Dónde corre el modelo"
+        htmlFor="agent-provider"
+        hint={
+          openrouter
+            ? 'OpenRouter. Necesita OPENROUTER_API_KEY y se configura con bun run agent:profile.'
+            : 'Un servidor local en esta PC. Nada sale de ella; se configura con bun run agent:profile --provider local.'
+        }
       >
-        <input
-          id="agent-model"
-          className={`${inputClass} font-mono`}
-          value={draft.model}
-          onChange={(e) => onChange({ model: e.target.value })}
-          aria-invalid={errors.model ? true : undefined}
-          aria-describedby={
-            errors.model ? 'agent-model-error' : 'agent-model-hint'
-          }
-          spellCheck={false}
-        />
+        <select
+          id="agent-provider"
+          className={inputClass}
+          value={draft.provider}
+          onChange={(e) => changeProvider(e.target.value as AgentProvider)}
+          aria-describedby="agent-provider-hint"
+        >
+          <option value="openrouter">OpenRouter</option>
+          <option value="local">Local</option>
+        </select>
       </Field>
+
+      <p className={`text-meta ${openrouter ? 'text-review' : 'text-muted'}`}>
+        {openrouter
+          ? OPENROUTER_PRIVACY
+          : 'El agente usa el modelo local: nada de lo que hace sale de esta PC.'}
+      </p>
+
+      {openrouter && (
+        <Field
+          label="Modelo de OpenRouter"
+          htmlFor="agent-model-select"
+          hint={
+            custom
+              ? 'Necesita imagen y herramientas. Identificador de OpenRouter, por ejemplo proveedor/modelo.'
+              : (preset?.hint ?? '')
+          }
+        >
+          <select
+            id="agent-model-select"
+            className={inputClass}
+            value={custom ? CUSTOM : draft.model}
+            onChange={(e) => {
+              if (e.target.value === CUSTOM) {
+                setCustomChosen(true)
+                return
+              }
+              setCustomChosen(false)
+              onChange({ model: e.target.value })
+            }}
+            aria-describedby="agent-model-select-hint"
+          >
+            {OPENROUTER_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+            <option value={CUSTOM}>Otro modelo…</option>
+          </select>
+        </Field>
+      )}
+
+      {(!openrouter || custom) && (
+        <Field
+          label={openrouter ? 'Identificador del modelo' : 'Modelo del agente'}
+          htmlFor="agent-model"
+          hint={
+            openrouter
+              ? 'Debe aceptar imagen y herramientas, o el agente no podrá usar la pantalla.'
+              : 'Aparte del cerebro de la voz. Para usar la pantalla necesita un modelo con visión; vacío usa el del perfil.'
+          }
+          error={errors.model}
+        >
+          <input
+            id="agent-model"
+            className={`${inputClass} font-mono`}
+            value={draft.model}
+            onChange={(e) => onChange({ model: e.target.value })}
+            aria-invalid={errors.model ? true : undefined}
+            aria-describedby={
+              errors.model ? 'agent-model-error' : 'agent-model-hint'
+            }
+            spellCheck={false}
+          />
+        </Field>
+      )}
 
       <StatusLine status={status} />
     </fieldset>

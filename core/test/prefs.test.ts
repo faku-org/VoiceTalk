@@ -193,6 +193,38 @@ describe('prefs store', () => {
     })
   })
 
+  test('agent runs on OpenRouter by default; the provider patch merges and is validated', () => {
+    const store = createPrefsStore(dir)
+    expect(store.get().agent.provider).toBe('openrouter')
+    expect(store.get().agent.model).toBe('meta/muse-ember')
+    const next = store.update({ agent: { provider: 'local', enabled: true } })
+    expect(next.agent).toEqual({
+      ...DEFAULT_PREFERENCES.agent,
+      provider: 'local',
+      enabled: true,
+    })
+    expect(() => store.update({ agent: { provider: 'mistral' } })).toThrow(
+      PreferencesError,
+    )
+  })
+
+  test('a file saved before the provider existed loads with the OpenRouter default', () => {
+    writeFileSync(
+      join(dir, 'preferences.json'),
+      JSON.stringify({
+        agent: {
+          enabled: true,
+          url: 'http://127.0.0.1:8650',
+          profile: 'voicetalk',
+          model: '',
+        },
+      }),
+    )
+    const { agent } = createPrefsStore(dir).get()
+    expect(agent.enabled).toBe(true)
+    expect(agent.provider).toBe('openrouter')
+  })
+
   test('detect rules replace as a whole, other capture fields survive', () => {
     const store = createPrefsStore(dir)
     store.update({ capture: { enabled: true } })

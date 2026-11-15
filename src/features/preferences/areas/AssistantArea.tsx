@@ -150,6 +150,7 @@ export function AssistantArea() {
     },
     agent: {
       enabled: agent.enabled,
+      provider: agent.provider,
       url: agent.url.trim(),
       profile: agent.profile.trim(),
       model: agent.model.trim(),
