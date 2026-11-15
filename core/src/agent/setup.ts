@@ -106,7 +106,8 @@ export function configCommands(setup: ProfileSetup): string[][] {
   validateSetup(setup)
   return [
     ...modelCommands(setup),
-    // Writes, commands and clicks always wait for the user (the approval step in the call timeline).
+    // Hermes' own filter decides what waits for the user (the approval step in the call timeline); commands it
+    // does not flag run unasked. `smart` adds a guardian LLM and `off` skips everything. See ADR 0017.
     ['config', 'set', 'approvals.mode', 'manual'],
     // Hermes v0.23 refuses a gateway per named profile unless it opts out of the host gateway (Faku's default
     // profile, cloud model). The key lives in the voicetalk config only; the host never serves this profile.

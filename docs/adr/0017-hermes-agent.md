@@ -32,7 +32,7 @@ is idempotent and has `--dry-run`:
 | `model.provider` / `default` (default, `--provider openrouter`) | `openrouter`, `meta/muse-ember` (`--model`); `base_url` and `api_key` are cleared so no stale local value survives                    |
 | `provider_routing.data_collection`                              | `deny` (OpenRouter only, see Privacy)                                                                                                 |
 | `model.provider` / `base_url` / `default` (`--provider local`)  | `custom`, VoiceTalk's local LLM URL (`--llm-url`, env `VT_LLM_URL`, default `http://127.0.0.1:8080/v1`), `--model`                    |
-| `approvals.mode`                                                | `manual`: writes, commands and clicks wait for the user                                                                               |
+| `approvals.mode`                                                | `manual`: Hermes asks only what its dangerous-command filter flags (see Approvals)                                                    |
 | `gateway.standalone`                                            | `true` (see below)                                                                                                                    |
 | Toolsets on `api_server`                                        | only `computer_use`, `vision`, `file`, `terminal`; every other enabled toolset is disabled                                            |
 | `.env` of the profile                                           | `API_SERVER_ENABLED`, `API_SERVER_HOST=127.0.0.1`, `API_SERVER_PORT=8650`, `API_SERVER_KEY`, and with OpenRouter `OPENROUTER_API_KEY` |
@@ -111,6 +111,43 @@ When the agent is on, the webview calls `hermes_ensure(profile, url)`. The shell
   it for up to 90 s, and records its pid;
 - on switch-off or app exit it stops **only that pid's tree**. Never by image name, never a gateway it did not start.
 
+### Approvals
+
+VoiceTalk adds no approval layer of its own. Approvals follow **Hermes' own dangerous-command filter** under
+`approvals.mode: manual`. Faku decided to keep that behavior as is. Hermes asks the user only when the filter flags
+something; the Runs API turns that into an approval event, and core shows it as the card in the timeline
+(`/v1/runs/{id}/approval`, only `once` or `deny`).
+
+**Asks** (read in Hermes 0.23.1, `tools/approval.py`, `tools/file_tools_write_guards.py`, computer-use handler):
+
+- `terminal` commands that match a dangerous pattern, and content rules (credential upload, hidden Unicode). Seen in
+  the smoke: `powershell -Command ...` ("script execution via -e/-c flag").
+- `computer_use` actions that change the screen state: click (also double, right, middle), drag, scroll, type, key,
+  set value, focus app, bring to front.
+- `write_file` / `patch` only on protected paths: `~/.ssh/config` and agent-instruction files.
+
+**Runs without asking:**
+
+- `terminal` commands that match no pattern. Seen in the smoke: `cmd /c start notepad.exe` (opens an app) and
+  `tasklist`. Also `dir`, `type` and the like.
+- `computer_use` `capture`, `wait`, `list_apps`, `list_windows` (screenshots and window lists).
+- `read_file`, `search_files`, `vision_analyze`.
+- `write_file` / `patch` on ordinary paths (derived from the guards above, not exercised in the smoke).
+
+So "ask before anything that changes something" is **not** guaranteed: a shell command the filter does not know can
+change the machine silently. That is the accepted trade-off. Dangerous patterns, hard floors (`approvals.deny`,
+hardline blocks) and the protected paths still stop the run.
+
+**Not used:**
+
+- `smart`: a guardian LLM (auxiliary model, optional `approvals.smart_policy`) assesses what the filter flagged. It is
+  not the same behavior: it adds a model that sees the command text (cost, privacy) and can approve on its own.
+- `off`: bypasses every approval. Never.
+- A `pre_tool_call` Hermes plugin that escalates every command and click to approval: prototyped, then dropped by
+  decision and never committed. The profile has no plugins.
+
+Revisit if the accepted trade-off changes: the plugin route is the way to force approval without patching Hermes.
+
 ### Privacy
 
 With OpenRouter, screenshots and the user's requests leave the PC. The profile sets
@@ -147,7 +184,8 @@ Real runs through core's `HermesClient`, provider `openrouter`, key without cred
 ## Consequences
 
 - Off by default; nothing starts and no port is opened until the user enables it.
-- Everything that changes the machine goes through `approvals.mode: manual` and a visible card.
+- Only what Hermes' dangerous-command filter flags waits for the user (a visible card). Opening apps, `tasklist`,
+  screenshots and ordinary file writes run unasked. See Approvals.
 - A run's steps live only in the live call timeline; they are not persisted in session history yet.
 - With OpenRouter the agent costs money per run and needs `OPENROUTER_API_KEY`; the status line says when it is missing.
 

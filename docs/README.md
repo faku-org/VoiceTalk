@@ -38,7 +38,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0015: One timeline for voice and text turns](adr/0015-one-timeline.md): text chat on the call brain inside the call view and each session (no tab), session threads, reply and follow-up from a selection, model ops as text directives, correction overlay, forks, SSE.
 - [0016: Call detection](adr/0016-call-detection.md): microphone holder from the consent store, pure state machine, prompt, rules per platform.
 
-- [0017: Hermes Agent](adr/0017-hermes-agent.md): Ether's hands. `voicetalk` profile (`bun run agent:profile`), OpenRouter or local model, privacy and data policy, Runs API client in core, `act` op, approval timeline, Tauri-managed gateway, real smoke results.
+- [0017: Hermes Agent](adr/0017-hermes-agent.md): Ether's hands. `voicetalk` profile (`bun run agent:profile`), OpenRouter or local model, privacy and data policy, approvals follow Hermes' dangerous-command filter, Runs API client in core, `act` op, approval timeline, Tauri-managed gateway, real smoke results.
 
 ## Fixes batches
 
