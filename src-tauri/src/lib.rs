@@ -1,4 +1,5 @@
 pub mod capture;
+mod hermes;
 mod sidecar;
 
 use std::path::{Path, PathBuf};
@@ -8,8 +9,32 @@ use capture::{
     capture_list_sources, capture_start, capture_status, capture_stop, native_mic_start,
     native_mic_stop, CaptureManager, NativeMicManager,
 };
+use hermes::{HermesStatus, HermesSupervisor};
 use sidecar::{Status, Supervisor};
 use tauri::{Manager, RunEvent, State};
+
+/// Starts the local Hermes gateway of `profile` if nothing answers on `url` yet (ADR 0017). Returns at once;
+/// poll `hermes_status`. Refuses the `default` profile and non-loopback addresses.
+#[tauri::command]
+fn hermes_ensure(
+    hermes: State<'_, HermesSupervisor>,
+    profile: String,
+    url: String,
+) -> Result<HermesStatus, String> {
+    hermes.ensure(&profile, &url)
+}
+
+#[tauri::command]
+fn hermes_status(hermes: State<'_, HermesSupervisor>) -> HermesStatus {
+    hermes.status()
+}
+
+/// Stops the gateway this shell started (never one it did not start).
+#[tauri::command]
+fn hermes_stop(hermes: State<'_, HermesSupervisor>) -> HermesStatus {
+    hermes.shutdown();
+    hermes.status()
+}
 
 #[tauri::command]
 fn sidecar_status(supervisor: State<'_, Supervisor>) -> Status {
@@ -41,6 +66,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sidecar_status,
             core_url,
+            hermes_ensure,
+            hermes_status,
+            hermes_stop,
             capture_list_sources,
             capture_start,
             capture_stop,
@@ -51,6 +79,7 @@ pub fn run() {
         ])
         .setup(|app| {
             app.manage(Supervisor::start(repo_root()));
+            app.manage(HermesSupervisor::default());
             app.manage(CaptureManager::default());
             let detect = DetectManager::default();
             detect.spawn(app.handle().clone());
@@ -64,6 +93,7 @@ pub fn run() {
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
             app_handle.state::<Supervisor>().shutdown();
+            app_handle.state::<HermesSupervisor>().shutdown();
         }
     });
 }

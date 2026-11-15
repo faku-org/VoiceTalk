@@ -1,10 +1,20 @@
+import type { AgentPort, AgentRunHandle } from '../agent/service.ts'
+import { spokenPermission, spokenSummary } from '../agent/speech.ts'
+import { AgentError, type AgentEvent } from '../agent/types.ts'
+import { OpStripper, parseOps } from '../chat/ops.ts'
 import type { ChatMessage, ChatProvider } from '../llm/provider.ts'
-import { PERSONA_PROMPT } from '../llm/persona.ts'
+import { AGENT_PROMPT, PERSONA_PROMPT } from '../llm/persona.ts'
 import { AsyncQueue } from '../tts/queue.ts'
 import { PCM_SAMPLE_RATE, type TtsProvider } from '../tts/provider.ts'
 import { SentenceChunker } from './chunker.ts'
 import type { CallEndReason, TranscriptEntry } from './events.ts'
-import type { CallOutput, CallState, TurnLatency } from './protocol.ts'
+import type {
+  AgentState,
+  AgentStep,
+  CallOutput,
+  CallState,
+  TurnLatency,
+} from './protocol.ts'
 import { callStore, type CallStore } from './store.ts'
 import {
   STT_TRY_AGAIN_LATER,
@@ -20,6 +30,8 @@ export interface CallDeps {
   out: CallOutput
   store?: CallStore
   persona?: string
+  // Ether's hands (ADR 0017). Absent or disabled: the brain never hears about actions.
+  agent?: AgentPort
   // Called once when the call is over for any reason (the socket layer closes the client).
   onEnd?: (reason: CallEndReason) => void
   log?: (line: string) => void
@@ -44,6 +56,16 @@ const LEVEL_INTERVAL_MS = 50
 const DEFAULT_HISTORY = 24
 // A spoken reply is short; this bounds a model that ignores the persona length rule.
 const SPOKEN_MAX_TOKENS = 160
+// Spoken lines about the agent wait for the floor; past this many the oldest is dropped.
+const MAX_QUEUED_NARRATIONS = 3
+const MAX_STEP_DETAIL = 2000
+
+// One task running in the agent. Independent of the voice turn: barge-in does not stop it.
+interface AgentRun {
+  handle: AgentRunHandle | null
+  task: AgentStep
+  approval: AgentStep | null
+}
 
 // One call: mic audio in, events and agent audio out. Turn based: a final transcript starts a
 // turn (LLM -> sentence chunks -> TTS -> audio); user speech during a turn cancels it (barge-in).
@@ -71,6 +93,11 @@ export class CallSession {
   // Marks of the turn being prepared, on d.now().
   private speechEndAt = 0
   private finalAt = 0
+  private run: AgentRun | null = null
+  private agentState: AgentState = 'idle'
+  private narrations: string[] = []
+  // One Hermes session per call, so follow-up tasks keep their context.
+  private readonly agentSession = `voicetalk-${crypto.randomUUID()}`
 
   constructor(deps: CallDeps) {
     this.d = {
@@ -90,6 +117,7 @@ export class CallSession {
     this.active = true
     this.setState('listening')
     this.connectStt()
+    void this.probeAgent()
   }
 
   // Mic frame from the client: pcm_s16le 16 kHz mono.
@@ -104,6 +132,7 @@ export class CallSession {
     this.active = false
     if (this.sttTimer) clearTimeout(this.sttTimer)
     this.cancelTurn()
+    this.endAgentRun()
     this.link?.close()
     this.link = null
     this.setState('idle')
@@ -170,7 +199,10 @@ export class CallSession {
     // The user is already talking again: wait for the end of that speech and answer both together.
     if (this.userSpeaking) return
     if (this.pendingUser.length === 0) {
-      if (!this.turn) this.setState('listening')
+      if (!this.turn) {
+        this.setState('listening')
+        this.drainNarrations()
+      }
       return
     }
     const joined = this.pendingUser.join(' ')
@@ -267,10 +299,18 @@ export class CallSession {
       )
     }).catch(fail)
 
+    // With the agent on, the brain may end its reply with `<<op {"op":"act",...}>>`: never spoken, never shown.
+    const agentOn = this.d.agent?.enabled() === true
+    const stripper = agentOn ? new OpStripper() : null
     try {
       const chunker = new SentenceChunker()
       const messages: ChatMessage[] = [
-        { role: 'system', content: this.d.persona },
+        {
+          role: 'system',
+          content: agentOn
+            ? `${this.d.persona} ${AGENT_PROMPT}`
+            : this.d.persona,
+        },
         ...this.history,
       ]
       for await (const token of this.d.llm.stream(messages, {
@@ -287,12 +327,23 @@ export class CallSession {
             t: Date.now(),
           }
         }
-        turn.agentText += token
+        const visible = stripper ? stripper.push(token) : token
+        if (!visible) continue
+        turn.agentText += visible
         this.emitAgentText(turn)
-        for (const chunk of chunker.push(token)) this.speak(turn, chunk, order)
+        for (const chunk of chunker.push(visible))
+          this.speak(turn, chunk, order)
       }
-      if (!signal.aborted)
+      if (!signal.aborted) {
+        const rest = stripper?.flush() ?? ''
+        if (rest) {
+          turn.agentText += rest
+          this.emitAgentText(turn)
+        }
+        for (const chunk of rest ? chunker.push(rest) : [])
+          this.speak(turn, chunk, order)
         for (const chunk of chunker.flush()) this.speak(turn, chunk, order)
+      }
     } catch (err) {
       fail(err)
     } finally {
@@ -310,12 +361,261 @@ export class CallSession {
       this.setState('listening')
       return
     }
+    // The reply was heard (or at least not cut): hand the task to the agent. A barge-in after this point does
+    // not cancel it; the user stops it from the timeline.
+    const act = stripper
+      ? parseOps(stripper.raw).ops.find((o) => o.op === 'act')
+      : undefined
+    if (act) {
+      if (!turn.spoken) this.narrate('Voy con eso.')
+      void this.startAgentTask(act.task)
+    }
     this.closeAgentEntry(turn, false)
     // The client still holds buffered audio: stay "speaking" until it has played out.
     await this.waitForPlayback(turn)
     if (this.turn === turn) {
       this.turn = null
       this.setState('listening')
+      this.drainNarrations()
+    }
+  }
+
+  // ---- agent (Hermes) ----
+
+  private setAgentState(state: AgentState): void {
+    if (this.agentState === state) return
+    this.agentState = state
+    this.d.out.json({ type: 'agent', state })
+  }
+
+  private putStep(step: AgentStep): void {
+    this.d.out.json({ type: 'agent_step', step })
+  }
+
+  // On connect: tell the client right away if Hermes is enabled but unreachable. The call works either way.
+  private async probeAgent(): Promise<void> {
+    const agent = this.d.agent
+    if (!agent?.enabled()) return
+    const status = await agent.status().catch(() => null)
+    if (!this.active || this.run) return
+    this.setAgentState(status?.online ? 'idle' : 'offline')
+  }
+
+  private async startAgentTask(task: string): Promise<void> {
+    const agent = this.d.agent
+    if (!agent || !this.active) return
+    if (this.run) {
+      this.narrate('Todavía estoy con la tarea anterior.')
+      return
+    }
+    const step: AgentStep = {
+      id: crypto.randomUUID(),
+      kind: 'task',
+      status: 'running',
+      title: task,
+      t: Date.now(),
+    }
+    const run: AgentRun = { handle: null, task: step, approval: null }
+    this.run = run
+    this.putStep(step)
+    this.setAgentState('working')
+    try {
+      const handle = await agent.run(task, (ev) => this.onAgentEvent(run, ev), {
+        sessionKey: this.agentSession,
+      })
+      run.handle = handle
+      // The call ended while Hermes was answering: nobody is left to approve anything.
+      if (!this.active) {
+        handle.stop().catch(() => undefined)
+        handle.detach()
+      }
+    } catch (err) {
+      if (this.run === run) this.run = null
+      const offline = !(err instanceof AgentError) || err.status === undefined
+      this.d.log?.(`[call] agent unavailable: ${(err as Error).message}`)
+      this.putStep({
+        ...step,
+        status: 'failed',
+        detail: offline
+          ? 'No pude conectar con el agente.'
+          : (err as Error).message,
+      })
+      this.setAgentState(offline ? 'offline' : 'idle')
+      this.narrate(
+        offline
+          ? 'No puedo conectar con el agente ahora.'
+          : 'El agente no pudo empezar la tarea.',
+      )
+    }
+  }
+
+  private onAgentEvent(run: AgentRun, ev: AgentEvent): void {
+    if (this.run !== run || !this.active) return
+    switch (ev.type) {
+      case 'tool':
+        run.task = {
+          ...run.task,
+          detail: [ev.name, ev.preview].filter(Boolean).join(' · '),
+        }
+        this.putStep(run.task)
+        break
+      case 'approval': {
+        const approval: AgentStep = {
+          id: crypto.randomUUID(),
+          kind: 'approval',
+          status: 'pending',
+          title: ev.request.description,
+          detail: ev.request.command,
+          t: Date.now(),
+        }
+        run.approval = approval
+        this.putStep(approval)
+        this.setAgentState('attention')
+        this.narrate(spokenPermission(ev.request.description))
+        break
+      }
+      case 'approval_settled':
+        this.settleApproval(
+          run,
+          ev.choice === 'once'
+            ? 'allowed'
+            : ev.choice === 'deny'
+              ? 'denied'
+              : 'cancelled',
+        )
+        break
+      case 'completed':
+        this.finishRun(run, 'done', ev.output)
+        this.narrate(spokenSummary(ev.output))
+        break
+      case 'failed':
+        this.d.log?.(`[call] agent failed: ${ev.error}`)
+        this.finishRun(run, 'failed', ev.error)
+        this.narrate('No pude completar la tarea.')
+        break
+      case 'cancelled':
+        this.finishRun(run, 'cancelled')
+        break
+      default:
+        break
+    }
+  }
+
+  private settleApproval(
+    run: AgentRun,
+    status: 'allowed' | 'denied' | 'cancelled',
+  ): void {
+    const approval = run.approval
+    if (!approval || approval.status !== 'pending') return
+    run.approval = { ...approval, status }
+    this.putStep(run.approval)
+    if (this.run === run) this.setAgentState('working')
+  }
+
+  private finishRun(
+    run: AgentRun,
+    status: 'done' | 'failed' | 'cancelled',
+    detail?: string,
+  ): void {
+    // An approval still open when the run ends can no longer be answered.
+    this.settleApproval(run, 'cancelled')
+    this.run = null
+    this.putStep({
+      ...run.task,
+      status,
+      detail: detail ? detail.slice(0, MAX_STEP_DETAIL) : run.task.detail,
+    })
+    this.setAgentState('idle')
+  }
+
+  /** The user answered an approval step in the UI (button or Esc). */
+  answerApproval(id: string, choice: 'once' | 'deny'): void {
+    const run = this.run
+    const approval = run?.approval
+    if (
+      !run ||
+      !approval ||
+      approval.id !== id ||
+      approval.status !== 'pending'
+    )
+      return
+    this.settleApproval(run, choice === 'once' ? 'allowed' : 'denied')
+    run.handle?.answer(choice).catch((err: unknown) => {
+      this.d.out.json({
+        type: 'error',
+        message: `agente: no se pudo enviar la respuesta (${(err as Error).message})`,
+      })
+    })
+  }
+
+  /** The user stopped the task from the timeline. The terminal event closes the step. */
+  stopAgent(): void {
+    this.run?.handle?.stop().catch((err: unknown) => {
+      this.d.log?.(`[call] agent stop failed: ${(err as Error).message}`)
+    })
+  }
+
+  // The call is over: stop the run (approvals can no longer be answered) and drop the stream.
+  private endAgentRun(): void {
+    const run = this.run
+    this.run = null
+    this.narrations = []
+    if (!run?.handle) return
+    run.handle.stop().catch(() => undefined)
+    run.handle.detach()
+  }
+
+  // ---- narration: one short neutral-Spanish line, spoken when nobody else has the floor ----
+
+  private narrate(text: string): void {
+    if (!this.active) return
+    if (this.turn || this.userSpeaking) {
+      this.narrations.push(text)
+      if (this.narrations.length > MAX_QUEUED_NARRATIONS)
+        this.narrations.shift()
+      return
+    }
+    void this.speakNarration(text)
+  }
+
+  private drainNarrations(): void {
+    if (!this.active || this.turn || this.userSpeaking) return
+    const next = this.narrations.shift()
+    if (next) void this.speakNarration(next)
+  }
+
+  private async speakNarration(text: string): Promise<void> {
+    const turn: Turn = {
+      id: ++this.turnSeq,
+      abort: new AbortController(),
+      agentEntry: {
+        id: crypto.randomUUID(),
+        speaker: 'agent',
+        text,
+        t: Date.now(),
+      },
+      agentText: text,
+      spoken: '',
+      closed: false,
+    }
+    this.turn = turn
+    const order = new AsyncQueue<AsyncIterator<Uint8Array>>()
+    const consumer = this.forwardAudio(turn, order, () =>
+      this.setState('speaking'),
+    ).catch(() => turn.abort.abort())
+    this.emitAgentText(turn)
+    const chunker = new SentenceChunker()
+    for (const chunk of [...chunker.push(text), ...chunker.flush()])
+      this.speak(turn, chunk, order)
+    order.end()
+    await consumer
+    if (this.turn !== turn) return // barge-in or call stopped: the interrupter closed the entry
+    this.closeAgentEntry(turn, false)
+    await this.waitForPlayback(turn)
+    if (this.turn === turn) {
+      this.turn = null
+      this.setState('listening')
+      this.drainNarrations()
     }
   }
 

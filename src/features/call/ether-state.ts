@@ -2,9 +2,9 @@
 // No React, no canvas: tested in ether-state.test.ts. Contract: DESIGN.md > Ether.
 
 import type { CallPhase } from './use-call'
-import type { CallState } from './protocol'
+import type { AgentState, CallState } from './protocol'
 
-/** Subset of the rig's `OrbState` this app drives. `working` and `attention` are reserved for computer use. */
+/** Subset of the rig's `OrbState` this app drives. `working` and `attention` come from the local agent. */
 export type EtherState =
   | 'idle'
   | 'listening'
@@ -25,6 +25,8 @@ export type EtherReaction = 'nod' | 'done' | 'think' | 'flash' | 'hop'
 export interface CallSnapshot {
   phase: CallPhase
   agentState: CallState
+  /** The local agent: `attention` (waiting for a permission) and `working` (acting) show on Ether. */
+  agent: AgentState
   /** A call-level error is showing (failed start, mic denied, socket closed). */
   error: boolean
   /** Sidecar or model missing: the call cannot start. */
@@ -39,6 +41,9 @@ export const RESTING_AFTER_MS = 5 * 60 * 1000
 /**
  * Call -> Ether state. Precedence: offline, then error (only outside an active call, so a stray mid-call
  * error never freezes her expression), then the agent state; `resting` only for a long idle outside a call.
+ * During a call a pending permission (`attention`) wins over everything: only the user can unblock it. `working`
+ * shows only while the voice is idle, so she never stops listening or speaking to look busy. An unreachable agent
+ * (`offline`) does not touch her: the call keeps working and the screen says so in words.
  */
 export function etherStateFor(call: CallSnapshot): EtherState {
   if (call.phase === 'idle') {
@@ -47,6 +52,8 @@ export function etherStateFor(call: CallSnapshot): EtherState {
     return call.longIdle ? 'resting' : 'idle'
   }
   if (call.phase === 'connecting') return 'idle'
+  if (call.agent === 'attention') return 'attention'
+  if (call.agent === 'working' && call.agentState === 'idle') return 'working'
   return call.agentState
 }
 

@@ -534,6 +534,11 @@ export class ChatService {
           })
           continue
         }
+        if (op.op === 'act')
+          throw new ChatError(
+            'invalid',
+            'El agente solo actúa durante una llamada.',
+          )
         const target = refs.get(op.ref)
         if (!target)
           throw new ChatError('not_found', 'No encontré ese elemento.')

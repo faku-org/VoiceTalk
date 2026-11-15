@@ -318,14 +318,19 @@ fn watch(slot: Arc<Mutex<Slot>>, name: &'static str, mut child: Child, port: u16
 
 /// Minimal HTTP/1.1 `GET /health` over a raw socket: true only on a 200 status line.
 fn probe_health(port: u16) -> bool {
+    probe_health_path(port, "/health")
+}
+
+/// Same probe for any path (the Hermes gateway also answers `/health`).
+pub(crate) fn probe_health_path(port: u16, path: &str) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, IO_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-    let request = b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
-    if stream.write_all(request).is_err() {
+    let request = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
         return false;
     }
     let mut buf = [0u8; 64];
@@ -336,7 +341,7 @@ fn probe_health(port: u16) -> bool {
 
 /// Kills a process and its children. On Windows `uv run` starts Python as a
 /// child, so killing only the root pid would leave Python running.
-fn kill_tree(pid: u32) {
+pub(crate) fn kill_tree(pid: u32) {
     let pid = pid.to_string();
     #[cfg(windows)]
     {

@@ -14,6 +14,8 @@ export type ModelOp =
   | { op: 'resume'; query: string }
   | { op: 'highlight'; ref: string; quote: string; note: string | null }
   | { op: 'fork'; ref: string; title: string | null }
+  // Hand a task to the local Hermes agent (ADR 0017). Only the call loop acts on it.
+  | { op: 'act'; task: string }
 
 export interface RejectedOp {
   op: string
@@ -127,14 +129,20 @@ export function validateOp(v: unknown): ModelOp | RejectedOp {
       if (!ref) return { op: name, reason: 'Falta el mensaje de origen.' }
       return { op: 'fork', ref, title: str(o.title, 80) }
     }
+    case 'act': {
+      const task = str(o.task, 500)
+      if (!task) return { op: name, reason: 'Falta la tarea para el agente.' }
+      return { op: 'act', task }
+    }
     default:
       return { op: name, reason: 'Operación desconocida.' }
   }
 }
 
-// A `correct` op carries an optional `reason` too, so tell them apart by shape: every valid op has `ref` or `query`.
+// A `correct` op carries an optional `reason` too, so tell them apart by shape: every valid op has `ref`, `query`
+// or (for `act`) `task`.
 const isRejected = (v: ModelOp | RejectedOp): v is RejectedOp =>
-  !('ref' in v) && !('query' in v)
+  !('ref' in v) && !('query' in v) && !('task' in v)
 
 /** Splits a full reply into visible text and validated operations. Directives never stay in `text`. */
 export function parseOps(raw: string): ParsedReply {

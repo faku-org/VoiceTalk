@@ -40,8 +40,32 @@ export interface DetectPreference {
   rules: DetectRuleEntry[]
 }
 
+export type AgentProvider = 'local' | 'openrouter'
+
+/** Hermes Agent: Ether's hands (ADR 0017). Its model is separate from the voice brain. */
+export interface AgentPreference {
+  enabled: boolean
+  /** `openrouter` sends screenshots and requests to OpenRouter; `local` stays on this PC. */
+  provider: AgentProvider
+  /** Hermes API server of the profile (loopback). */
+  url: string
+  /** Hermes profile; never `default`. */
+  profile: string
+  /** OpenRouter model id (needs image input and tools). Empty = the profile's own model. */
+  model: string
+}
+
+/** Reachability only: the API key never leaves core. */
+export interface AgentStatus {
+  enabled: boolean
+  hasKey: boolean
+  online: boolean
+  reason: string | null
+}
+
 export interface Preferences {
   brain: Brain
+  agent: AgentPreference
   /** Speech recognition model; the voice service swaps it in the background. */
   stt: SttModel
   llmUrl: string
@@ -65,6 +89,7 @@ export interface Preferences {
 /** Same shape, every field optional (nested objects too). */
 export interface PreferencesPatch {
   brain?: Partial<Brain>
+  agent?: Partial<AgentPreference>
   stt?: SttModel
   llmUrl?: string
   tts?: { provider?: TtsProvider; voices?: Partial<TtsVoices> }
@@ -113,6 +138,7 @@ export interface ModelStatus {
 
 export const PREFS_FIELDS = `
   brain { provider model baseUrl effort style systemPrompt }
+  agent { enabled provider url profile model }
   stt llmUrl folders theme
   tts { provider voices { cartesia xai } }
   thresholds { respondConfidence vadSensitivity endOfTurnMs }

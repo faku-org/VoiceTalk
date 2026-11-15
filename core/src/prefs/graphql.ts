@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql'
+import { getAgentService, type AgentStatus } from '../agent/service.ts'
 import { EFFORTS, KEY_ENV, PROVIDERS, STYLES } from '../llm/presets.ts'
 import {
   DETECT_RULES,
@@ -64,6 +65,28 @@ export function registerPrefs(builder: AnyBuilder): void {
           resolve: (b: Preferences['brain']) => b.style,
         }),
         systemPrompt: t.exposeString('systemPrompt'),
+      }),
+    })
+  const Agent = builder
+    .objectRef<Preferences['agent']>('AgentPreference')
+    .implement({
+      fields: (t) => ({
+        enabled: t.exposeBoolean('enabled'),
+        provider: t.exposeString('provider'),
+        url: t.exposeString('url'),
+        profile: t.exposeString('profile'),
+        model: t.exposeString('model'),
+      }),
+    })
+  // Reachability only: the API key never leaves core.
+  const AgentStatusRef = builder
+    .objectRef<AgentStatus>('AgentStatus')
+    .implement({
+      fields: (t) => ({
+        enabled: t.exposeBoolean('enabled'),
+        hasKey: t.exposeBoolean('hasKey'),
+        online: t.exposeBoolean('online'),
+        reason: t.exposeString('reason', { nullable: true }),
       }),
     })
   const Thresholds = builder
@@ -159,6 +182,7 @@ export function registerPrefs(builder: AnyBuilder): void {
   const Prefs = builder.objectRef<Preferences>('Preferences').implement({
     fields: (t) => ({
       brain: t.field({ type: Brain, resolve: (p: Preferences) => p.brain }),
+      agent: t.field({ type: Agent, resolve: (p: Preferences) => p.agent }),
       llmUrl: t.exposeString('llmUrl'),
       tts: t.field({ type: TtsPref, resolve: (p: Preferences) => p.tts }),
       stt: t.field({ type: SttModel, resolve: (p: Preferences) => p.stt }),
@@ -274,6 +298,15 @@ export function registerPrefs(builder: AnyBuilder): void {
       systemPrompt: t.string(),
     }),
   })
+  const AgentInput = builder.inputType('AgentPreferenceInput', {
+    fields: (t) => ({
+      enabled: t.boolean(),
+      provider: t.string(),
+      url: t.string(),
+      profile: t.string(),
+      model: t.string(),
+    }),
+  })
   const ThresholdsInput = builder.inputType('DecisionThresholdsInput', {
     fields: (t) => ({
       respondConfidence: t.float(),
@@ -328,6 +361,7 @@ export function registerPrefs(builder: AnyBuilder): void {
   const PreferencesInput = builder.inputType('PreferencesInput', {
     fields: (t) => ({
       brain: t.field({ type: BrainInput }),
+      agent: t.field({ type: AgentInput }),
       llmUrl: t.string(),
       tts: t.field({ type: TtsInput }),
       stt: t.field({ type: SttModel }),
@@ -344,6 +378,10 @@ export function registerPrefs(builder: AnyBuilder): void {
     preferences: t.field({
       type: Prefs,
       resolve: () => getPrefsStore().get(),
+    }),
+    agentStatus: t.field({
+      type: AgentStatusRef,
+      resolve: () => getAgentService().status(),
     }),
     models: t.field({
       type: [Model],

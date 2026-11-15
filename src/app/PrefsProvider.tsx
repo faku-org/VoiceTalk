@@ -24,6 +24,7 @@ function mergeLocal(base: Preferences, patch: PreferencesPatch): Preferences {
     ...base,
     ...stripUndefined(patch),
     brain: { ...base.brain, ...stripUndefined(patch.brain) },
+    agent: { ...base.agent, ...stripUndefined(patch.agent) },
     thresholds: { ...base.thresholds, ...stripUndefined(patch.thresholds) },
     location: { ...base.location, ...stripUndefined(patch.location) },
     capture: {

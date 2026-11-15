@@ -2,6 +2,7 @@ import { CircleAlert, Mic, PhoneOff } from 'lucide-react'
 import { usePrefs } from '@/app/prefsContext'
 import { formatClock } from '@/features/capture/protocol'
 import { CallConversation } from '@/features/chat'
+import { AgentTimeline } from './AgentTimeline'
 import { useAfter, useElapsedSeconds, useMediaQuery } from './call-hooks'
 import { EtherOrb } from './EtherOrb'
 import {
@@ -26,14 +27,15 @@ export function CallScreen({
   offline?: boolean
 }) {
   const { prefs } = usePrefs()
-  const { view, levels, start, stop } = useCall(
+  const { view, levels, start, stop, answerApproval, stopAgent } = useCall(
     corePort,
     prefs?.capture.nativeMic ?? false,
   )
   const wide = useMediaQuery('(min-width: 1024px)')
   const inCall = view.phase !== 'idle'
   // After a call the transcript stays: keep the two-part layout instead of dropping it.
-  const hasConversation = inCall || view.transcript.length > 0
+  const hasConversation =
+    inCall || view.transcript.length > 0 || view.steps.length > 0
 
   const seconds = useElapsedSeconds(view.phase === 'active')
   const quiet = view.phase === 'idle' && !offline && view.error === null
@@ -42,6 +44,7 @@ export function CallScreen({
   const snapshot: CallSnapshot = {
     phase: view.phase,
     agentState: view.agentState,
+    agent: view.agent,
     error: view.error !== null,
     offline,
     longIdle,
@@ -88,6 +91,12 @@ export function CallScreen({
             </p>
           )}
 
+          {inCall && view.agent === 'offline' && (
+            <p role="status" className="max-w-sm text-meta text-muted">
+              El agente no responde. La llamada sigue; no puedo hacer tareas en
+              la PC por ahora.
+            </p>
+          )}
           {offline && !inCall && (
             <p className="max-w-sm text-meta text-muted">
               Los servicios locales no están disponibles. Revisa su estado en
@@ -138,6 +147,11 @@ export function CallScreen({
         {hasConversation && (
           <div className="w-full min-w-0 flex-1">
             <CallConversation inCall={inCall} live={view.transcript} />
+            <AgentTimeline
+              steps={view.steps}
+              onApproval={answerApproval}
+              onStop={stopAgent}
+            />
             {view.latency && (
               <p className="mt-4 font-mono text-xs text-text-muted tabular-nums">
                 Último turno: {Math.round(view.latency.latency.totalMs)} ms
