@@ -22,7 +22,7 @@ import type { DiscordStatusHandle } from '@/features/discord'
 import { PreferencesScreen } from '@/features/preferences/PreferencesScreen'
 import { SessionsScreen } from '@/features/sessions/SessionsScreen'
 import { fadeVariants, transition } from '@/lib/motion'
-import type { JournalRecording } from '@/features/call'
+import { useJournalStatus } from '@/features/call'
 import { useElapsedSeconds } from '@/features/call/call-hooks'
 import { CallSlot } from './callSlot'
 import { usePrefs } from './prefsContext'
@@ -41,16 +41,14 @@ function ViewBody({
   view,
   capture,
   discord,
-  onJournal,
 }: {
   view: View
   capture: CaptureApi
   discord: DiscordStatusHandle
-  onJournal: (recording: JournalRecording | null) => void
 }) {
   switch (view) {
     case 'call':
-      return <CallSlot onJournal={onJournal} />
+      return <CallSlot />
     case 'capture':
       return <CaptureScreen capture={capture} />
     case 'discord':
@@ -113,7 +111,7 @@ function JournalBar({ paused }: { paused: boolean }) {
 
 export function AppShell() {
   const [view, setView] = useState<View>('call')
-  const [journal, setJournal] = useState<JournalRecording | null>(null)
+  const journal = useJournalStatus()
   const capture = useCapture()
   const detect = useCallDetection(capture)
   const { keyStatus } = usePrefs()
@@ -209,12 +207,7 @@ export function AppShell() {
               exit={variants.exit}
               transition={transition}
             >
-              <ViewBody
-                view={view}
-                capture={capture}
-                discord={discord}
-                onJournal={setJournal}
-              />
+              <ViewBody view={view} capture={capture} discord={discord} />
             </motion.div>
           </AnimatePresence>
         </main>

@@ -1,1 +1,2 @@
-export { CallScreen, type JournalRecording } from './CallScreen'
+export { CallScreen } from './CallScreen'
+export { useJournalStatus } from './journalStatus'
