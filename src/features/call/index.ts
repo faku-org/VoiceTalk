@@ -1,1 +1,1 @@
-export { CallScreen } from './CallScreen'
+export { CallScreen, type JournalRecording } from './CallScreen'

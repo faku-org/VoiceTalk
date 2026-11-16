@@ -4,6 +4,7 @@ import {
   Headphones,
   History,
   MapPin,
+  NotebookPen,
   RefreshCw,
 } from 'lucide-react'
 import { Button, SectionTitle } from '@/app/ui'
@@ -15,6 +16,7 @@ import {
   type SessionSummaryRow,
 } from './api'
 import {
+  JOURNAL_SOURCE,
   formatDuration,
   formatStarted,
   sessionLabel,
@@ -57,6 +59,47 @@ function Bullets({ title, items }: { title: string; items: string[] }) {
           <li key={item}>{item}</li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+type Filter = 'all' | 'journal'
+
+const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
+  { id: 'all', label: 'Todas' },
+  { id: 'journal', label: 'Diario' },
+]
+
+/** Todas / Diario. Stays on screen when the filtered list is empty, so the way back is always there. */
+function FilterTabs({
+  value,
+  onChange,
+}: {
+  value: Filter
+  onChange: (next: Filter) => void
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Filtrar sesiones"
+      className="inline-flex gap-1 rounded-control bg-surface-2 p-1"
+    >
+      {FILTERS.map(({ id, label }) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={value === id}
+          onClick={() => onChange(id)}
+          className={`h-8 rounded-control px-3 text-body-lg font-medium transition-colors duration-(--dur-fast) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+            value === id
+              ? 'bg-surface text-accent'
+              : 'text-muted hover:text-text'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -113,8 +156,14 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
           <span>{statusLabel(session.status)}</span>
           {platform && (
             <span className="inline-flex items-center gap-1 whitespace-nowrap">
-              <Headphones className="size-3.5" aria-hidden="true" />
-              Capturada de {platform}
+              {session.source === JOURNAL_SOURCE ? (
+                <NotebookPen className="size-3.5" aria-hidden="true" />
+              ) : (
+                <Headphones className="size-3.5" aria-hidden="true" />
+              )}
+              {session.source === JOURNAL_SOURCE
+                ? platform
+                : `Capturada de ${platform}`}
             </span>
           )}
           {where && (
@@ -162,6 +211,7 @@ export function SessionsScreen() {
     state: 'loading',
   })
   const [selected, setSelected] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
   // Detail results carry the id they belong to: "loading" is derived (no setState inside the effect).
   const [loaded, setLoaded] = useState<{
     id: string
@@ -169,15 +219,22 @@ export function SessionsScreen() {
   } | null>(null)
 
   const load = useCallback(() => {
-    fetchSessions().then(
+    fetchSessions(filter === 'journal' ? JOURNAL_SOURCE : undefined).then(
       (data) => setList({ state: 'ready', data }),
       (err) => setList({ state: 'error', message: message(err) }),
     )
-  }, [])
+  }, [filter])
 
   const reload = () => {
     setList({ state: 'loading' })
     load()
+  }
+
+  const changeFilter = (next: Filter) => {
+    if (next === filter) return
+    setList({ state: 'loading' })
+    setSelected(null)
+    setFilter(next)
   }
 
   useEffect(load, [load])
@@ -216,6 +273,8 @@ export function SessionsScreen() {
         </Button>
       </div>
 
+      <FilterTabs value={filter} onChange={changeFilter} />
+
       {list.state === 'error' && <ErrorLine text={list.message} />}
       {list.state === 'loading' && (
         <p className="text-body text-muted" aria-live="polite">
@@ -224,8 +283,9 @@ export function SessionsScreen() {
       )}
       {list.state === 'ready' && list.data.length === 0 && (
         <Empty>
-          Todavía no hay conversaciones guardadas. Cuando termines una llamada
-          aparecerá aquí.
+          {filter === 'journal'
+            ? 'Todavía no hay diarios guardados. Cuando termines uno aparecerá aquí.'
+            : 'Todavía no hay conversaciones guardadas. Cuando termines una llamada aparecerá aquí.'}
         </Empty>
       )}
 

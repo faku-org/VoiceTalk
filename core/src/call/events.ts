@@ -20,6 +20,9 @@ export interface TranscriptEntry {
 // Where a call comes from. Stored as sessions.source (ADR 0010); new capture sources add values.
 export type CallSource = 'call' | 'discord' | (string & {})
 
+// How a call runs. `journal` only transcribes: no reply, no voice, no agent ops (ADR 0018).
+export type CallMode = 'call' | 'journal'
+
 export type CallEndReason = 'client' | 'error' | 'shutdown'
 
 export interface CallEventMap {

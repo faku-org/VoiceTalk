@@ -3,7 +3,8 @@ import { PERSONA_PROMPT } from '../llm/persona.ts'
 import { AsyncQueue } from '../tts/queue.ts'
 import { PCM_SAMPLE_RATE, type TtsProvider } from '../tts/provider.ts'
 import { SentenceChunker } from './chunker.ts'
-import type { CallEndReason, TranscriptEntry } from './events.ts'
+import { JOURNAL_SOURCE } from '../capture/platforms.ts'
+import type { CallEndReason, CallMode, TranscriptEntry } from './events.ts'
 import type { CallOutput, CallState, TurnLatency } from './protocol.ts'
 import { callStore, type CallStore } from './store.ts'
 import {
@@ -15,8 +16,11 @@ import {
 
 export interface CallDeps {
   stt: SttConnector
-  llm: ChatProvider
-  tts: TtsProvider
+  // Required in `call` mode. A journal never reaches the brain or the voice, so it needs neither.
+  llm?: ChatProvider
+  tts?: TtsProvider
+  // `journal` only transcribes: no reply, no audio, no thinking state (ADR 0018). Default `call`.
+  mode?: CallMode
   out: CallOutput
   store?: CallStore
   persona?: string
@@ -47,6 +51,7 @@ const SPOKEN_MAX_TOKENS = 160
 
 // One call: mic audio in, events and agent audio out. Turn based: a final transcript starts a
 // turn (LLM -> sentence chunks -> TTS -> audio); user speech during a turn cancels it (barge-in).
+// In journal mode a final transcript is only saved: nothing answers, nothing is spoken.
 export class CallSession {
   private readonly d: Required<
     Pick<
@@ -56,6 +61,8 @@ export class CallSession {
   > &
     CallDeps
   private readonly store: CallStore
+  private readonly mode: CallMode
+  private paused = false
   private link: SttLink | null = null
   private state: CallState = 'idle'
   private active = false
@@ -82,11 +89,14 @@ export class CallSession {
       ...deps,
     }
     this.store = deps.store ?? callStore
+    this.mode = deps.mode ?? 'call'
+    if (this.mode === 'call' && (!deps.llm || !deps.tts))
+      throw new Error('call mode needs an llm and a tts')
   }
 
   start(): void {
     if (this.active) return
-    this.store.start()
+    this.store.start(this.mode === 'journal' ? JOURNAL_SOURCE : undefined)
     this.active = true
     this.setState('listening')
     this.connectStt()
@@ -94,9 +104,41 @@ export class CallSession {
 
   // Mic frame from the client: pcm_s16le 16 kHz mono.
   pushAudio(frame: Uint8Array): void {
-    if (!this.active) return
+    if (!this.active || this.paused) return
     this.link?.sendAudio(frame)
     this.emitLevel(frame)
+  }
+
+  // Journal only: stops listening without ending the session. Typed lines still go through.
+  pause(): void {
+    if (!this.active || this.mode !== 'journal' || this.paused) return
+    this.paused = true
+    this.userSpeaking = false
+    this.setState('idle')
+  }
+
+  resume(): void {
+    if (!this.active || this.mode !== 'journal' || !this.paused) return
+    this.paused = false
+    this.setState('listening')
+  }
+
+  // Journal only: a typed line saved as a user turn. No reply, ever.
+  addText(text: string): void {
+    const clean = text.trim()
+    if (!this.active || this.mode !== 'journal' || !clean) return
+    this.saveUserLine(clean)
+  }
+
+  private saveUserLine(text: string): void {
+    const entry: TranscriptEntry = {
+      id: crypto.randomUUID(),
+      speaker: 'user',
+      text,
+      t: Date.now(),
+    }
+    this.store.upsert(entry, true)
+    this.d.out.json({ type: 'transcript', entry, final: true })
   }
 
   stop(reason: CallEndReason = 'client'): void {
@@ -140,6 +182,7 @@ export class CallSession {
 
   private onStt(event: SttEvent): void {
     if (!this.active) return
+    if (this.mode === 'journal') return this.onJournalStt(event)
     switch (event.type) {
       case 'speech_start':
         this.sttAttempt = 0
@@ -156,6 +199,27 @@ export class CallSession {
       case 'final':
         this.onFinal(event.text)
         break
+      case 'error':
+        this.d.out.json({ type: 'error', message: event.message })
+        break
+    }
+  }
+
+  // Orb: `listening` while the user talks, `idle` in the pauses, never thinking or speaking.
+  private onJournalStt(event: SttEvent): void {
+    switch (event.type) {
+      case 'speech_start':
+        this.sttAttempt = 0
+        if (!this.paused) this.setState('listening')
+        break
+      case 'speech_end':
+        if (!this.paused) this.setState('idle')
+        break
+      case 'final': {
+        const clean = event.text.trim()
+        if (clean) this.saveUserLine(clean)
+        break
+      }
       case 'error':
         this.d.out.json({ type: 'error', message: event.message })
         break
@@ -229,6 +293,8 @@ export class CallSession {
       closed: false,
     }
     this.turn = turn
+    const llm = this.d.llm
+    if (!llm) throw new Error('no llm')
     const signal = turn.abort.signal
     const speechEndAt = this.speechEndAt
     const finalAt = this.finalAt
@@ -273,7 +339,7 @@ export class CallSession {
         { role: 'system', content: this.d.persona },
         ...this.history,
       ]
-      for await (const token of this.d.llm.stream(messages, {
+      for await (const token of llm.stream(messages, {
         signal,
         maxTokens: SPOKEN_MAX_TOKENS,
       })) {
@@ -331,11 +397,13 @@ export class CallSession {
     chunk: string,
     order: AsyncQueue<AsyncIterator<Uint8Array>>,
   ): void {
+    const tts = this.d.tts
+    if (!tts) throw new Error('no tts')
     turn.spoken = turn.spoken ? `${turn.spoken} ${chunk}` : chunk
     const audio = new AsyncQueue<Uint8Array>()
     void (async () => {
       try {
-        for await (const pcm of this.d.tts.stream(chunk, {
+        for await (const pcm of tts.stream(chunk, {
           signal: turn.abort.signal,
         }))
           audio.push(pcm)

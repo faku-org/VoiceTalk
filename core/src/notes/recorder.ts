@@ -1,7 +1,7 @@
 import type { CallEvents, TranscriptEntry } from '../call/events.ts'
 import type { ChatProvider } from '../llm/index.ts'
 import type { Embedder } from '../rag/index.ts'
-import { CALL_SOURCE } from '../capture/platforms.ts'
+import { CALL_SOURCE, JOURNAL_SOURCE } from '../capture/platforms.ts'
 import { decide, type Line } from './decision.ts'
 import type {
   NoteRepo,
@@ -29,6 +29,8 @@ export const DEFAULT_RECORDER_PREFS: RecorderPrefs = {
 export const DECISION_INTERVAL_MS = 30_000
 /** The decision prompt sees at most this much new transcript per tick. */
 const MAX_WINDOW_CHARS = 3000
+/** A journal is decided once, at the end, in windows of this size; this bounds the model calls of a very long one. */
+const MAX_JOURNAL_WINDOWS = 8
 const RECALL_K = 3
 const RECALL_MIN_SCORE = 0.3
 
@@ -54,13 +56,13 @@ interface ActiveCall {
   id: string
   startedAt: number
   location: string
-  /** 'call' or the platform key of a captured call. */
+  /** 'call', 'journal' or the platform key of a captured call. */
   source: string
   /** Transcript kept in memory for the model; the database copy is the durable one. */
   lines: Line[]
   /** First line the decision model has not seen yet. */
   cursor: number
-  timer: ReturnType<typeof setInterval>
+  timer: ReturnType<typeof setInterval> | null
   ticking: Promise<void> | null
   written: Set<string>
 }
@@ -122,7 +124,8 @@ export class NotesRecorder {
   async stop(): Promise<void> {
     for (const off of this.#off) off()
     this.#off = []
-    for (const call of this.#calls.values()) clearInterval(call.timer)
+    for (const call of this.#calls.values())
+      if (call.timer) clearInterval(call.timer)
     await this.idle()
   }
 
@@ -159,12 +162,16 @@ export class NotesRecorder {
         cursor: 0,
         ticking: null,
         written: new Set(),
-        timer: setInterval(
-          () => void this.#tick(call),
-          this.#d.intervalMs ?? DECISION_INTERVAL_MS,
-        ),
+        // A journal runs no model while it records (ADR 0018): its decision runs once, at the end.
+        timer:
+          source === JOURNAL_SOURCE
+            ? null
+            : setInterval(
+                () => void this.#tick(call),
+                this.#d.intervalMs ?? DECISION_INTERVAL_MS,
+              ),
       }
-      call.timer.unref?.()
+      call.timer?.unref?.()
       this.#calls.set(callId, call)
     } catch (err) {
       this.#log('could not open the session', err)
@@ -207,7 +214,7 @@ export class NotesRecorder {
   #onEnded(callId: string, t: number, reason: string): void {
     const call = this.#calls.get(callId)
     if (!call) return
-    clearInterval(call.timer)
+    if (call.timer) clearInterval(call.timer)
     this.#calls.delete(callId)
     void this.#track(this.#finish(call, t, reason))
   }
@@ -224,7 +231,10 @@ export class NotesRecorder {
       sessions.end(call.id, t, clean ? 'ended' : 'interrupted')
       // A forced quit must finish fast: no model calls, only the plain summary.
       const online = reason !== 'shutdown'
-      if (online) await this.#decide(call)
+      if (online) {
+        if (call.source === JOURNAL_SOURCE) await this.#decideJournal(call)
+        else await this.#decide(call)
+      }
       const lines: Line[] = utterances.list(call.id).map((u) => ({
         speaker: u.speaker,
         text: u.text,
@@ -271,11 +281,10 @@ export class NotesRecorder {
 
   /** One decision over the transcript since the last one. Errors are logged, never thrown. */
   async #decide(call: ActiveCall): Promise<void> {
-    const llm = this.#d.llm
     // Captured calls (ADR 0009) feed no private memory: other people's words never become internal notes.
     if (call.source !== CALL_SOURCE) return
     const fresh = call.lines.slice(call.cursor)
-    if (!llm || !fresh.some((l) => l.speaker === 'user')) return
+    if (!this.#d.llm || !fresh.some((l) => l.speaker === 'user')) return
     call.cursor = call.lines.length
     let window = fresh
     while (
@@ -283,6 +292,37 @@ export class NotesRecorder {
       window.reduce((n, l) => n + l.text.length, 0) > MAX_WINDOW_CHARS
     )
       window = window.slice(1)
+    await this.#decideWindow(call, window)
+  }
+
+  /**
+   * The journal's decision pass, at the end: the whole transcript in windows, so a long entry is not reduced to its
+   * last 3000 characters. Only the user's own words are in a journal, so notes are as safe as in a call.
+   */
+  async #decideJournal(call: ActiveCall): Promise<void> {
+    if (!this.#d.llm) return
+    const windows: Line[][] = []
+    let current: Line[] = []
+    let size = 0
+    for (const line of call.lines.slice(call.cursor)) {
+      if (current.length && size + line.text.length > MAX_WINDOW_CHARS) {
+        windows.push(current)
+        current = []
+        size = 0
+      }
+      current.push(line)
+      size += line.text.length
+    }
+    if (current.length) windows.push(current)
+    call.cursor = call.lines.length
+    // A very long journal keeps its latest part when it exceeds the bound.
+    for (const window of windows.slice(-MAX_JOURNAL_WINDOWS))
+      await this.#decideWindow(call, window)
+  }
+
+  async #decideWindow(call: ActiveCall, window: Line[]): Promise<void> {
+    const llm = this.#d.llm
+    if (!llm) return
     try {
       const decision = await decide(llm, window)
       if (!decision || decision.action === 'none') return

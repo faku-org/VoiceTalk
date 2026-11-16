@@ -37,6 +37,7 @@ Setup, environment variables, icons, signing key, GitHub secrets and releases: [
 - [0014: Native microphone with echo cancellation](adr/0014-mic-aec.md): WASAPI mic + loopback reference, AEC3, RNNoise, `WS /call/mic`, opt-in.
 - [0015: One timeline for voice and text turns](adr/0015-one-timeline.md): text chat on the call brain inside the call view and each session (no tab), session threads, reply and follow-up from a selection, model ops as text directives, correction overlay, forks, SSE.
 - [0016: Call detection](adr/0016-call-detection.md): microphone holder from the consent store, pure state machine, prompt, rules per platform.
+- [0018: Journal mode](adr/0018-journal-mode.md): mic to transcript with no reply and no audio, `?mode=journal` on `WS /call`, source `journal`, summary at the end, mode picker and Sesiones filter.
 
 ## Fixes batches
 

@@ -18,7 +18,8 @@ export interface SessionRepo {
     },
   ): void
   get(id: string): Session | null
-  list(limit: number, offset: number): Session[]
+  /** Newest first. `source` keeps only that session source ('journal', 'call', a platform key). */
+  list(limit: number, offset: number, source?: string): Session[]
   end(id: string, endedAt: number, status: SessionStatus): void
   setTitle(id: string, title: string): void
   /** Sessions still marked active (a crash or a forced quit left them open). */
@@ -97,12 +98,12 @@ export class SqliteSessionRepo implements SessionRepo {
     return r ? toSession(r) : null
   }
 
-  list(limit: number, offset: number): Session[] {
+  list(limit: number, offset: number, source?: string): Session[] {
     return this.db
-      .query<SessionDbRow, [number, number]>(
-        'SELECT * FROM sessions ORDER BY started_at DESC, id LIMIT ? OFFSET ?',
+      .query<SessionDbRow, [string | null, number, number]>(
+        'SELECT * FROM sessions WHERE (?1 IS NULL OR source = ?1) ORDER BY started_at DESC, id LIMIT ?2 OFFSET ?3',
       )
-      .all(limit, offset)
+      .all(source ?? null, limit, offset)
       .map(toSession)
   }
 

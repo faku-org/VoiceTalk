@@ -75,13 +75,19 @@ export function registerNotes(builder: Builder): void {
   builder.queryFields((t) => ({
     sessions: t.field({
       type: [SessionType],
-      args: { limit: t.arg.int(), offset: t.arg.int() },
+      args: {
+        limit: t.arg.int(),
+        offset: t.arg.int(),
+        // Keeps one session source: 'journal', 'call' or a platform key. Absent lists everything.
+        source: t.arg.string(),
+      },
       resolve: (_root, args, ctx) =>
         ctx
           .services()
           .notes.sessions.list(
             Math.min(Math.max(1, args.limit ?? 50), MAX_PAGE),
             Math.max(0, args.offset ?? 0),
+            args.source ?? undefined,
           ),
     }),
     session: t.field({
