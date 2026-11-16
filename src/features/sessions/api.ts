@@ -38,9 +38,13 @@ export interface SessionDetailData extends SessionSummaryRow {
 
 const ROW = 'id title startedAt endedAt location status utteranceCount source'
 
-export async function fetchSessions(): Promise<SessionSummaryRow[]> {
+/** `source` keeps one session source ('journal'); without it the list is everything. */
+export async function fetchSessions(
+  source?: string,
+): Promise<SessionSummaryRow[]> {
   const data = await gql<{ sessions: SessionSummaryRow[] }>(
-    `{ sessions(limit: 100) { ${ROW} } }`,
+    `query($source: String) { sessions(limit: 100, source: $source) { ${ROW} } }`,
+    { source: source ?? null },
   )
   return data.sessions
 }

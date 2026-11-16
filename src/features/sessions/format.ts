@@ -24,7 +24,10 @@ export const speakerLabel = (
   return speaker === 'remote' ? 'Interlocutor' : 'Tú'
 }
 
+export const JOURNAL_SOURCE = 'journal'
+
 const SOURCE_LABEL: Record<string, string> = {
+  journal: 'Diario',
   discord: 'Discord',
   teams: 'Microsoft Teams',
   zoom: 'Zoom',
@@ -34,7 +37,7 @@ const SOURCE_LABEL: Record<string, string> = {
   other: 'Otra aplicación',
 }
 
-/** Platform of a captured or Discord session ("Discord"); null for a plain VoiceTalk call. */
+/** Platform of a captured or Discord session ("Discord"), "Diario" for a journal; null for a plain VoiceTalk call. */
 export const sourceLabel = (source: string | undefined): string | null =>
   !source || source === 'call' ? null : (SOURCE_LABEL[source] ?? source)
 

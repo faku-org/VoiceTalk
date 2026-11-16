@@ -40,6 +40,9 @@ export interface DetectPreference {
   rules: DetectRuleEntry[]
 }
 
+/** `journal` only transcribes: nobody answers (ADR 0018). */
+export type CallMode = 'call' | 'journal'
+
 export interface Preferences {
   brain: Brain
   /** Speech recognition model; the voice service swaps it in the background. */
@@ -59,6 +62,8 @@ export interface Preferences {
     nativeMic: boolean
   }
   theme: ThemePreference
+  /** Mode the call screen starts in: the last one used (ADR 0018). */
+  callMode: CallMode
   onboarding: { version: number; completedAt: string } | null
 }
 
@@ -79,6 +84,7 @@ export interface PreferencesPatch {
     nativeMic?: boolean
   }
   theme?: ThemePreference
+  callMode?: CallMode
   onboarding?: { version: number; completedAt: string } | null
 }
 
@@ -113,7 +119,7 @@ export interface ModelStatus {
 
 export const PREFS_FIELDS = `
   brain { provider model baseUrl effort style systemPrompt }
-  stt llmUrl folders theme
+  stt llmUrl folders theme callMode
   tts { provider voices { cartesia xai } }
   thresholds { respondConfidence vadSensitivity endOfTurnMs }
   location { manual ipGeolocation }

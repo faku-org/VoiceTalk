@@ -153,6 +153,24 @@ describe('prefs store', () => {
     expect(() => store.update({ brain: 'gpt' })).toThrow(PreferencesError)
   })
 
+  test('callMode (ADR 0018) defaults to call, remembers the last mode and rejects unknown ones', () => {
+    expect(DEFAULT_PREFERENCES.callMode).toBe('call')
+    const store = createPrefsStore(dir)
+    expect(store.update({ callMode: 'journal' }).callMode).toBe('journal')
+    expect(createPrefsStore(dir).get().callMode).toBe('journal')
+    // Unrelated patches keep it.
+    expect(store.update({ theme: 'light' }).callMode).toBe('journal')
+    expect(() => store.update({ callMode: 'diary' })).toThrow(PreferencesError)
+  })
+
+  test('a preferences file written before callMode existed reads as call', () => {
+    writeFileSync(
+      join(dir, 'preferences.json'),
+      JSON.stringify({ theme: 'light' }),
+    )
+    expect(createPrefsStore(dir).get().callMode).toBe('call')
+  })
+
   test('nativeMic (ADR 0014) is off by default, patches alone and survives a file without it', () => {
     expect(DEFAULT_PREFERENCES.capture.nativeMic).toBe(false)
     writeFileSync(

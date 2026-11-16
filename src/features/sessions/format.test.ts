@@ -40,6 +40,7 @@ describe('sessions format', () => {
   test('source badge only for non-mic captures', () => {
     expect(sourceLabel('discord')).toBe('Discord')
     expect(sourceLabel('call')).toBeNull()
+    expect(sourceLabel('journal')).toBe('Diario')
     expect(sourceLabel(undefined)).toBeNull()
   })
 

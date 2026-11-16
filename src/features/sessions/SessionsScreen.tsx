@@ -4,6 +4,7 @@ import {
   Headphones,
   History,
   MapPin,
+  NotebookPen,
   RefreshCw,
 } from 'lucide-react'
 import { Button, SectionTitle } from '@/app/ui'
@@ -15,6 +16,7 @@ import {
   type SessionSummaryRow,
 } from './api'
 import {
+  JOURNAL_SOURCE,
   formatDuration,
   formatStarted,
   sessionLabel,
@@ -61,6 +63,47 @@ function Bullets({ title, items }: { title: string; items: string[] }) {
   )
 }
 
+type Filter = 'all' | 'journal'
+
+const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
+  { id: 'all', label: 'Todas' },
+  { id: 'journal', label: 'Diario' },
+]
+
+/** Todas / Diario. Stays on screen when the filtered list is empty, so the way back is always there. */
+function FilterTabs({
+  value,
+  onChange,
+}: {
+  value: Filter
+  onChange: (next: Filter) => void
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Filtrar sesiones"
+      className="inline-flex gap-1 rounded-control bg-surface-2 p-1"
+    >
+      {FILTERS.map(({ id, label }) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={value === id}
+          onClick={() => onChange(id)}
+          className={`h-8 rounded-control px-3 text-body-lg font-medium transition-colors duration-(--dur-fast) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+            value === id
+              ? 'bg-surface text-accent'
+              : 'text-muted hover:text-text'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function SessionRow({
   row,
   selected,
@@ -97,6 +140,18 @@ function SessionRow({
   )
 }
 
+/** Where the session came from: a journal, or a call captured from a platform. */
+function SourceBadge({ source, label }: { source: string; label: string }) {
+  const journal = source === JOURNAL_SOURCE
+  const Icon = journal ? NotebookPen : Headphones
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <Icon className="size-3.5" aria-hidden="true" />
+      {journal ? label : `Capturada de ${label}`}
+    </span>
+  )
+}
+
 function SessionDetail({ session }: { session: SessionDetailData }) {
   const duration = formatDuration(session.startedAt, session.endedAt)
   const where = session.location.trim()
@@ -111,12 +166,7 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
           <span>{formatStarted(session.startedAt)}</span>
           {duration && <span>{duration}</span>}
           <span>{statusLabel(session.status)}</span>
-          {platform && (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-              <Headphones className="size-3.5" aria-hidden="true" />
-              Capturada de {platform}
-            </span>
-          )}
+          {platform && <SourceBadge source={session.source} label={platform} />}
           {where && (
             <span className="inline-flex items-center gap-1">
               <MapPin className="size-3.5" aria-hidden="true" />
@@ -157,30 +207,14 @@ function SessionDetail({ session }: { session: SessionDetailData }) {
   )
 }
 
-export function SessionsScreen() {
-  const [list, setList] = useState<Load<SessionSummaryRow[]>>({
-    state: 'loading',
-  })
-  const [selected, setSelected] = useState<string | null>(null)
-  // Detail results carry the id they belong to: "loading" is derived (no setState inside the effect).
+/** Loads the detail of the selected session. "Loading" is derived: results carry the id they belong to. */
+function useSessionDetail(
+  selected: string | null,
+): Load<SessionDetailData | null> {
   const [loaded, setLoaded] = useState<{
     id: string
     result: Load<SessionDetailData | null>
   } | null>(null)
-
-  const load = useCallback(() => {
-    fetchSessions().then(
-      (data) => setList({ state: 'ready', data }),
-      (err) => setList({ state: 'error', message: message(err) }),
-    )
-  }, [])
-
-  const reload = () => {
-    setList({ state: 'loading' })
-    load()
-  }
-
-  useEffect(load, [load])
 
   useEffect(() => {
     if (!selected) return
@@ -201,8 +235,71 @@ export function SessionsScreen() {
     }
   }, [selected])
 
-  const detail: Load<SessionDetailData | null> =
-    loaded && loaded.id === selected ? loaded.result : { state: 'loading' }
+  return loaded && loaded.id === selected ? loaded.result : { state: 'loading' }
+}
+
+/** Loads the list for a filter; `reload` shows the loading line again. */
+function useSessionList(filter: Filter) {
+  const [list, setList] = useState<Load<SessionSummaryRow[]>>({
+    state: 'loading',
+  })
+  const load = useCallback(() => {
+    fetchSessions(filter === 'journal' ? JOURNAL_SOURCE : undefined).then(
+      (data) => setList({ state: 'ready', data }),
+      (err) => setList({ state: 'error', message: message(err) }),
+    )
+  }, [filter])
+  useEffect(load, [load])
+  const reload = () => {
+    setList({ state: 'loading' })
+    load()
+  }
+  return { list, reload, showLoading: () => setList({ state: 'loading' }) }
+}
+
+/** Right-hand side: nothing picked, loading, error, gone, or the session. */
+function DetailPane({
+  selected,
+  detail,
+}: {
+  selected: string | null
+  detail: Load<SessionDetailData | null>
+}) {
+  if (!selected) {
+    return (
+      <p className="flex items-start gap-3 text-body-lg text-muted">
+        <History className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        Elige una conversación para ver el detalle.
+      </p>
+    )
+  }
+  if (detail.state === 'loading') {
+    return <p className="text-body text-muted">Cargando…</p>
+  }
+  if (detail.state === 'error') return <ErrorLine text={detail.message} />
+  if (detail.data === null)
+    return <Empty>Esta conversación ya no existe.</Empty>
+  return <SessionDetail session={detail.data} />
+}
+
+const EMPTY_TEXT: Record<Filter, string> = {
+  all: 'Todavía no hay conversaciones guardadas. Cuando termines una llamada aparecerá aquí.',
+  journal:
+    'Todavía no hay diarios guardados. Cuando termines uno aparecerá aquí.',
+}
+
+export function SessionsScreen() {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
+  const { list, reload, showLoading } = useSessionList(filter)
+  const detail = useSessionDetail(selected)
+
+  const changeFilter = (next: Filter) => {
+    if (next === filter) return
+    showLoading()
+    setSelected(null)
+    setFilter(next)
+  }
 
   return (
     <div className="space-y-4">
@@ -216,6 +313,8 @@ export function SessionsScreen() {
         </Button>
       </div>
 
+      <FilterTabs value={filter} onChange={changeFilter} />
+
       {list.state === 'error' && <ErrorLine text={list.message} />}
       {list.state === 'loading' && (
         <p className="text-body text-muted" aria-live="polite">
@@ -223,10 +322,7 @@ export function SessionsScreen() {
         </p>
       )}
       {list.state === 'ready' && list.data.length === 0 && (
-        <Empty>
-          Todavía no hay conversaciones guardadas. Cuando termines una llamada
-          aparecerá aquí.
-        </Empty>
+        <Empty>{EMPTY_TEXT[filter]}</Empty>
       )}
 
       {list.state === 'ready' && list.data.length > 0 && (
@@ -242,27 +338,7 @@ export function SessionsScreen() {
             ))}
           </ul>
           <aside aria-label="Detalle" aria-live="polite">
-            {!selected && (
-              <p className="flex items-start gap-3 text-body-lg text-muted">
-                <History
-                  className="mt-0.5 size-5 shrink-0"
-                  aria-hidden="true"
-                />
-                Elige una conversación para ver el detalle.
-              </p>
-            )}
-            {selected && detail.state === 'loading' && (
-              <p className="text-body text-muted">Cargando…</p>
-            )}
-            {selected && detail.state === 'error' && (
-              <ErrorLine text={detail.message} />
-            )}
-            {selected && detail.state === 'ready' && detail.data === null && (
-              <Empty>Esta conversación ya no existe.</Empty>
-            )}
-            {selected && detail.state === 'ready' && detail.data && (
-              <SessionDetail session={detail.data} />
-            )}
+            <DetailPane selected={selected} detail={detail} />
           </aside>
         </div>
       )}

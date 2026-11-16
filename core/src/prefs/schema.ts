@@ -120,6 +120,8 @@ const shape = z.object({
   location: locationShape,
   capture: captureShape,
   theme: z.enum(['system', 'light', 'dark']),
+  /** Mode the call screen starts in: the last one used (ADR 0018). */
+  callMode: z.enum(['call', 'journal']),
   onboarding: onboardingShape.nullable(),
 })
 
@@ -152,6 +154,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     nativeMic: false,
   },
   theme: 'system',
+  callMode: 'call',
   onboarding: null,
 }
 

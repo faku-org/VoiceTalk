@@ -12,6 +12,7 @@ import {
 } from '../src/llm/index.ts'
 import {
   DECISION_PROMPT,
+  JOURNAL_SUMMARY_PROMPT,
   createNotesService,
   decide,
   formatDate,
@@ -777,5 +778,110 @@ describe('GraphQL sessions', () => {
     )
     expect(r.errors).toBeUndefined()
     expect(r.data.sessions).toHaveLength(1)
+  })
+})
+
+describe('recorder: journal sessions (ADR 0018)', () => {
+  test('runs no model while it records; decides once at the end and summarizes with the journal prompt', async () => {
+    const { store, llm, notes } = setup({ intervalMs: 15 })
+    llm.decisions.push(NOTE('Quiere viajar a la montaña.', 0.9))
+    llm.summaries.push(SUMMARY)
+    const call = store.start('journal')
+    say(store, 'u1', 'user', 'Quiero viajar a la montaña.')
+    await Bun.sleep(80)
+    await notes.recorder.idle()
+    // Several timer periods passed: still no model call, no note.
+    expect(llm.calls).toHaveLength(0)
+    expect(notes.notes.all(['internal'])).toHaveLength(0)
+    expect(notes.sessions.get(call.id)).toMatchObject({
+      status: 'active',
+      source: 'journal',
+    })
+
+    store.end('client')
+    await notes.recorder.idle()
+
+    expect(llm.calls.map((c) => c.kind)).toEqual(['decision', 'summary'])
+    expect(llm.calls[1]!.messages[0]!.content).toBe(JOURNAL_SUMMARY_PROMPT)
+    expect(notes.sessions.get(call.id)?.status).toBe('ended')
+    expect(notes.summaries.get(call.id)?.summary).toContain('Ana')
+    expect(notes.notes.all(['internal']).map((n) => n.body)).toEqual([
+      'Quiere viajar a la montaña.',
+    ])
+    const [external] = notes.notes.listExternal(call.id)
+    expect(external?.body).toContain('Diario:')
+    expect(external?.body).not.toContain('Conversación')
+  })
+
+  test('a long journal is decided in several windows, bounded', async () => {
+    const { store, llm, notes } = setup()
+    for (let i = 0; i < 12; i++)
+      llm.decisions.push(JSON.stringify({ action: 'none' }))
+    llm.summaries.push(SUMMARY)
+    store.start('journal')
+    // ~12 windows of text: each line alone is near the window size.
+    for (let i = 0; i < 12; i++)
+      say(store, `u${i}`, 'user', `${'palabra '.repeat(400)}${i}`)
+    store.end('client')
+    await notes.recorder.idle()
+    const decisions = llm.calls.filter((c) => c.kind === 'decision').length
+    expect(decisions).toBeGreaterThan(1)
+    expect(decisions).toBeLessThanOrEqual(8)
+  })
+
+  test('a journal with no speech leaves no session behind', async () => {
+    const { store, llm, notes } = setup()
+    const call = store.start('journal')
+    store.end('client')
+    await notes.recorder.idle()
+    expect(notes.sessions.get(call.id)).toBeNull()
+    expect(llm.calls).toHaveLength(0)
+  })
+})
+
+describe('GraphQL sessions source filter', () => {
+  const s = scratch()
+  const config = { ...loadStorageConfig({}), dataDir: s.dir, folders: [] }
+  const services = createServices(config, {
+    embedder: new FakeEmbedder(),
+    db: openDb(join(s.dir, 'filter.db')),
+    llm: null,
+  })
+  afterAll(() => {
+    services.close()
+    s.cleanup()
+  })
+  for (const [id, source, at] of [
+    ['c1', 'call', 1000],
+    ['j1', 'journal', 2000],
+    ['d1', 'discord', 3000],
+  ] as const) {
+    services.notes.sessions.create({ id, startedAt: at, location: '', source })
+    services.notes.sessions.end(id, at + 100, 'ended')
+  }
+
+  const ids = async (args: string) => {
+    const res = await createCore(
+      { port: 0, cartesiaApiKey: undefined },
+      services,
+    ).app.handle(
+      new Request('http://127.0.0.1/graphql', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: `{ sessions${args} { id source } }` }),
+      }),
+    )
+    const body = (await res.json()) as {
+      data?: { sessions: { id: string; source: string }[] }
+      errors?: unknown[]
+    }
+    expect(body.errors).toBeUndefined()
+    return body.data!.sessions.map((r) => `${r.id}:${r.source}`)
+  }
+
+  test('without a source it lists everything; with one it keeps only that source', async () => {
+    expect(await ids('')).toEqual(['d1:discord', 'j1:journal', 'c1:call'])
+    expect(await ids('(source: "journal")')).toEqual(['j1:journal'])
+    expect(await ids('(source: "nope")')).toEqual([])
   })
 })

@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import type { ChatMessage, ChatProvider } from '../llm/index.ts'
 import { complete, formatLines, jsonObjects, type Line } from './decision.ts'
-import { CALL_SOURCE, platformLabel } from '../capture/platforms.ts'
+import {
+  CALL_SOURCE,
+  JOURNAL_SOURCE,
+  platformLabel,
+} from '../capture/platforms.ts'
 import type { SpeakerId, Summary } from './types.ts'
 
 const list = z.array(z.string().trim().min(1).max(300)).max(8)
@@ -42,6 +46,19 @@ Zoom: Sí, pero antes necesito los números de ventas.
 Usuario: Te los mando mañana.
 {"summary":"Acordaron revisar el presupuesto el jueves. El usuario enviará mañana los números de ventas.","open_questions":["Confirmar la hora de la reunión del jueves."],"raised":["Presupuesto","Números de ventas"]}`
 
+/** Same contract, for a journal session (ADR 0018): the user talked alone, nobody answered. */
+export const JOURNAL_SUMMARY_PROMPT = `Eres el modelo que resume entradas de diario de VoiceTalk. Recibes lo que el usuario dijo en voz alta (o escribió) hablando consigo mismo; nadie le respondió.
+Escribe en español neutro, con tono cálido y sencillo, sin juzgar ni diagnosticar. Usa "tú" si necesitas dirigirte a alguien; nunca uses voseo.
+Responde solo con un JSON con estas claves:
+- "summary": dos o tres frases sobre lo que el usuario contó, pensó o sintió.
+- "open_questions": lista de dudas, decisiones pendientes o cosas que dijo que quería hacer (puede ser vacía).
+- "raised": lista de temas, personas o asuntos que mencionó (puede ser vacía).
+No inventes nada que no esté en la transcripción.
+Ejemplo:
+Usuario: Hoy terminé el informe, pero sigo dudando si le digo a Marta que me cambie de equipo.
+Usuario: Tengo que decidirme antes del viernes.
+{"summary":"El usuario terminó su informe. Duda si pedirle a Marta un cambio de equipo y quiere decidirlo antes del viernes.","open_questions":["Decidir si pedir el cambio de equipo antes del viernes."],"raised":["Informe","Marta","Cambio de equipo"]}`
+
 /** The model sees at most this many characters of transcript (the local context is 8k tokens). */
 export const SUMMARY_MAX_CHARS = 8000
 export const SUMMARY_MAX_TOKENS = 500
@@ -61,7 +78,12 @@ export function summaryMessages(
   return [
     {
       role: 'system',
-      content: source === CALL_SOURCE ? SUMMARY_PROMPT : CAPTURE_SUMMARY_PROMPT,
+      content:
+        source === CALL_SOURCE
+          ? SUMMARY_PROMPT
+          : source === JOURNAL_SOURCE
+            ? JOURNAL_SUMMARY_PROMPT
+            : CAPTURE_SUMMARY_PROMPT,
     },
     { role: 'user', content: clip(lines) },
   ]
@@ -149,19 +171,20 @@ export function externalNoteBody(input: {
   names?: string[]
 }): string {
   const { draft } = input
-  const captured = input.source && input.source !== CALL_SOURCE
+  const journal = input.source === JOURNAL_SOURCE
+  const captured = input.source && input.source !== CALL_SOURCE && !journal
   const who = input.names?.length
     ? input.names
     : input.speakers.map((s) => WHO[s])
   const head = [
     formatDate(input.startedAt),
     input.location.trim() || null,
-    `con ${joinNames(who)}`,
+    journal ? null : `con ${joinNames(who)}`,
   ]
     .filter(Boolean)
     .join(' · ')
   const parts = [
-    `${captured ? `Llamada en ${platformLabel(input.source!)}` : 'Conversación'}: ${head}.`,
+    `${journal ? 'Diario' : captured ? `Llamada en ${platformLabel(input.source!)}` : 'Conversación'}: ${head}.`,
     draft.summary,
   ]
   if (draft.openQuestions.length)

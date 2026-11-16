@@ -45,6 +45,10 @@ export function registerPrefs(builder: AnyBuilder): void {
     values: ['system', 'light', 'dark'] as const,
   })
 
+  const CallModePref = builder.enumType('CallModePreference', {
+    values: ['call', 'journal'] as const,
+  })
+
   const Brain = builder
     .objectRef<Preferences['brain']>('BrainPreference')
     .implement({
@@ -176,6 +180,10 @@ export function registerPrefs(builder: AnyBuilder): void {
         resolve: (p: Preferences) => p.capture,
       }),
       theme: t.field({ type: Theme, resolve: (p: Preferences) => p.theme }),
+      callMode: t.field({
+        type: CallModePref,
+        resolve: (p: Preferences) => p.callMode,
+      }),
       onboarding: t.field({
         type: Onboarding,
         nullable: true,
@@ -336,6 +344,7 @@ export function registerPrefs(builder: AnyBuilder): void {
       location: t.field({ type: LocationInput }),
       capture: t.field({ type: CaptureInput }),
       theme: t.field({ type: Theme }),
+      callMode: t.field({ type: CallModePref }),
       onboarding: t.field({ type: OnboardingInput }),
     }),
   })
